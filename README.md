@@ -162,13 +162,6 @@ Then, take the following action to customize to your environment:
 
 -   Create your `.env` and create a new user to access the portal
 
-## Search
-
--   _Simple_ search takes the user provided fields (`key` & `value`) and prepares a MongoDB find() object, with projection set to `{}` so returns all columns.
--   _Advanced_ search passes the `find` and `projection` fields/objects straight into MongoDB `db.collection.find(query, projection)`. The `find` object is where your query happens, while the `projection` object determines which columns are returned.
-
-See [MongoDB db.collection.find()](https://docs.mongodb.org/manual/reference/method/db.collection.find/) documentation for examples and exact usage.
-
 ## Planned features
 
 Pull Requests are always welcome! <3
