@@ -105,7 +105,7 @@ The installation will create a `.env` file with default settings, if you prefer 
 
 **To run:**
 
-    cd YOUR_PATH/node_modules/mongocarbon/ && npm run build && npm start
+    cd YOUR_PATH/node_modules/mongocarbon/ && npm start
 
 or if you installed it globally, you can immediately start mongocarbon like this:
 
