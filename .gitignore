@@ -4,4 +4,4 @@ node_modules
 .env
 .history
 .DS_Store
-./prisma/*.db
+prisma/db.db
