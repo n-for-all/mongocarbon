@@ -111,6 +111,11 @@ or if you installed it globally, you can immediately start mongocarbon like this
 
     mongocarbon
 
+**PM2:**
+
+    cd YOUR_PATH/node_modules/mongocarbon/ && pm2 start app.config.js
+
+
 ## Installation fails with `ibmtelemetry: Permission Denied`
 
 -   If you are installing the package as part of another project, make sure your package.json contains the a name and the version for the package
@@ -134,7 +139,7 @@ or if you installed it globally, you can immediately start mongocarbon like this
        }
    }
    ```
--   run `npm link` and This will execute ibmtelemetry from your own package.json
+-   If still doesn't work, then create a new `package.json` with `npm init` and install mongocarbon then add your dependencies
 
 ## Usage (Docker)
 
