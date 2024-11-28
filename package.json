@@ -15,10 +15,11 @@
 		"lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
 		"start": "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 		"typecheck": "tsc",
-        "postinstall": "node console/install && npm run prisma",
-        "test": "echo \"Error: No tests are added\""
+		"postinstall": "node console/install && npm run prisma",
+		"test": "echo \"Error: No tests are added\""
 	},
 	"dependencies": {
+		"@carbon/feature-flags": "^0.17.0",
 		"@carbon/icons-react": "^11.53.0",
 		"@carbon/react": "^1.71.0",
 		"@carbon/styles": "^1.70.0",
