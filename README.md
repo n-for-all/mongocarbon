@@ -111,6 +111,30 @@ or if you installed it globally, you can immediately start mongocarbon like this
 
     mongocarbon
 
+## Installation fails with `ibmtelemetry: Permission Denied`
+
+-   If you are installing the package as part of another project, make sure your package.json contains the a name and the version for the package
+-   If needed, create a new file named `telemetry.js` in your project's root directory. Add the following code to the file:
+
+   ```javascript
+   #!/usr/bin/env node
+   
+   ```
+
+-   Update `package.json` with 
+   ```json
+   {
+       "name": "your-project-name",
+       "version": "1.0.0",
+       "scripts": {
+           // ...other scripts
+       },
+       "bin": {
+           "ibmtelemetry": "./telemetry.js"
+       }
+   }
+   ```
+-   run `npm link` and This will execute ibmtelemetry from your own package.json
 
 ## Usage (Docker)
 
