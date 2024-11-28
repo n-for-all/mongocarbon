@@ -20,6 +20,7 @@
 	},
 	"dependencies": {
 		"@carbon/feature-flags": "^0.17.0",
+		"@carbon/grid": "^11.29.0",
 		"@carbon/icons-react": "^11.53.0",
 		"@carbon/react": "^1.71.0",
 		"@carbon/styles": "^1.70.0",
