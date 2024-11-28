@@ -15,7 +15,7 @@
 		"lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
 		"start": "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 		"typecheck": "tsc",
-        "preinstall": "echo \"Welcome to MongoCarbon 0.0.3a\" && IBM_TELEMETRY_DISABLED='true'",
+		"preinstall": "echo \"Welcome to MongoCarbon 0.0.3a\" && IBM_TELEMETRY_DISABLED='true'",
 		"postinstall": "node console/install && npm run prisma",
 		"test": "echo \"Error: No tests are added\""
 	},
@@ -74,7 +74,7 @@
 		"vite-tsconfig-paths": "^4.2.1"
 	},
 	"bin": {
-		"ibmtelemetry": "echo \"IBM Telemetry Disabled\""
+		"ibmtelemetry": "./console/telemetry.js"
 	},
 	"engines": {
 		"node": ">=20.0.0"
