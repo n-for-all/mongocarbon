@@ -14,7 +14,8 @@
 		"prisma": "prisma generate && prisma db push",
 		"lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
 		"start": "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
-		"typecheck": "tsc"
+		"typecheck": "tsc",
+        "test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"dependencies": {
 		"@carbon/icons-react": "^11.53.0",
