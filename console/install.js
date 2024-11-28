@@ -30,8 +30,8 @@ program.description("Install").action((options) => {
 			envContent += `\nSESSION_SECRET=${sessionSecret}\n`;
 		}
 
-		if (!envContent.includes("nIBM_TELEMETRY_DISABLED")) {
-            update.push("nIBM_TELEMETRY_DISABLED");
+		if (!envContent.includes("IBM_TELEMETRY_DISABLED")) {
+            update.push("IBM_TELEMETRY_DISABLED");
 			envContent += `\nIBM_TELEMETRY_DISABLED='true'\n`;
 		}
 		if (update.length > 0) {

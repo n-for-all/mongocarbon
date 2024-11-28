@@ -15,8 +15,8 @@
 		"lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
 		"start": "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 		"typecheck": "tsc",
-		"preinstall": "echo \"Welcome to MongoCarbon 0.0.3a\" && IBM_TELEMETRY_DISABLED='true'",
-		"postinstall": "node console/install && npm run prisma",
+		"preinstall": "echo \"Welcome to MongoCarbon\"",
+		"postinstall": "node console/install && prisma generate && prisma db push",
 		"test": "echo \"Error: No tests are added\""
 	},
 	"dependencies": {
