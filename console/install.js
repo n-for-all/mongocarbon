@@ -29,6 +29,11 @@ program.description("Install").action((options) => {
             update.push("SESSION_SECRET");
 			envContent += `\nSESSION_SECRET=${sessionSecret}\n`;
 		}
+
+		if (!envContent.includes("nIBM_TELEMETRY_DISABLED")) {
+            update.push("nIBM_TELEMETRY_DISABLED");
+			envContent += `\nIBM_TELEMETRY_DISABLED='true'\n`;
+		}
 		if (update.length > 0) {
 			fs.writeFileSync(envPath, envContent);
 			console.log(update.join(' and ') + " have been generated and appended to .env file.");

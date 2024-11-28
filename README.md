@@ -98,7 +98,7 @@ You can also delete the user using the terminal ex:
 
 **To configure:**
 
-The installation will create a `.env` file with default settings, if you prefer to change them, you can edit the `.env` file with the following settingsand replace the DATABASE_URL and SESSION_SECRET with a new secret:
+The installation will create a `.env` file with default settings, if you prefer to change them, you can edit the `.env` file with the following settings and replace the DATABASE_URL and SESSION_SECRET with a new secret:
 
     DATABASE_URL="file:./db.db"
     SESSION_SECRET=8df3f6d031e4eff1a00bce856014442e07773252c1e9fb38a552001aef37e476`
