@@ -8,8 +8,8 @@ import { Modal, Stack, FormGroup, TextInput, InlineNotification, Grid, Column, B
 import { Checkmark, Copy, Add, TrashCan, SortAscending, SortDescending, DataTable, ArrowRight, Edit, ChevronDown, ChevronRight, Close, ListBoxes, TableSplit, Connect, ConnectSource, UserAvatar, Logout, LogoGithub, Watch, Fork, Download, ChevronUp, DataView } from '@carbon/icons-react';
 import React, { useState, useEffect, useRef } from 'react';
 import * as dotenv from 'dotenv';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import appRoot from 'app-root-path';
 import mongodb, { Timestamp, Binary } from 'mongodb';
 import validator from 'validator';
 import parser from 'mongodb-query-parser';
@@ -533,23 +533,15 @@ const Title = ({ title, children, allowCopy = true }) => {
   ] });
 };
 
-dotenv.config();
+const envPath = path.join(appRoot.toString(), ".env");
+dotenv.config({ path: envPath });
 function getBoolean(str, defaultValue = false) {
   return str ? str.toLowerCase() === "true" : defaultValue;
 }
 const config = {
-  site: {
-    host: "localhost",
-    port: process.env.PORT || 4321,
-    requestSizeLimit: process.env.REQUEST_SIZE || "50mb",
-    sslCert: process.env.SSL_CRT_PATH || "",
-    sslEnabled: getBoolean(process.env.SSL_ENABLED, false),
-    sslKey: process.env.SSL_KEY_PATH || ""
-  },
   options: {
     gridFSEnabled: getBoolean(process.env.GRIDFS_ENABLED, true)
-  },
-  rootPath: path.dirname(fileURLToPath(import.meta.url))
+  }
 };
 
 const mongodbOperators = [
@@ -586,9 +578,8 @@ const mongodbOperators = [
   "$bitsAnySet"
 ];
 function validateUsername(username) {
-  const { isEmail } = validator;
-  if (!isEmail(username)) {
-    return `Usernames must be a valid email address`;
+  if (!isUsername(username)) {
+    return `Usernames must be at least 3 characters long and no spaces included`;
   }
 }
 function validatePassword(password) {
@@ -672,6 +663,14 @@ const isValidCollectionName = function(name) {
     return false;
   }
   if (!/^[/A-Z_a-z-][\w./-]*$/.test(name)) {
+    return false;
+  }
+  return true;
+};
+const isUsername = (username) => {
+  if (validator.isEmpty(username) || username.length <= 3) {
+    return false;
+  } else if (!validator.matches(username, "^[a-zA-Z0-9_.-]*$")) {
     return false;
   }
   return true;
@@ -1236,17 +1235,25 @@ async function updateUserDbConnection(userId, connectionId, connection) {
     }
   });
 }
+const cookie = {
+  name: "mongocarbon_session",
+  secure: typeof process.env.SECURE_COOKIE != "undefined" ? !!process.env.SECURE_COOKIE : process.env.NODE_ENV === "production",
+  secrets: [sessionSecret],
+  path: "/",
+  maxAge: 60 * 60 * 24 * 30,
+  httpOnly: true
+};
 const storage = createCookieSessionStorage({
-  cookie: {
-    name: "mongocarbon_session",
-    secure: process.env.NODE_ENV === "production",
-    secrets: [sessionSecret],
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-    httpOnly: true
-  }
+  cookie
 });
 const commitSession = storage.commitSession;
+function checkUserSession(request) {
+  const url = new URL(request.url);
+  const scheme = url.protocol.replace(":", "");
+  if (scheme === "http" && cookie.secure) {
+    throw new Error("Secure cookies cannot be used on HTTP connections, it is either you set SECURE_COOKIE=0 in your .env file or use https connection.");
+  }
+}
 async function createUserSession(userId, redirectTo) {
   const session = await storage.getSession();
   session.set("userId", userId);
@@ -1269,6 +1276,9 @@ async function requireUserId(request, redirectTo = new URL(request.url).pathname
   const session = await getUserSession(request);
   const userId = session.get("userId");
   if (!userId || typeof userId !== "string") {
+    if (["", "/", "/login"].includes(redirectTo)) {
+      throw redirect(`/login`);
+    }
     const searchParams = new URLSearchParams([["redirectTo", redirectTo]]);
     throw redirect(`/login?${searchParams}`);
   }
@@ -4207,9 +4217,8 @@ function Dashboard$2() {
       /* @__PURE__ */ jsx("h2", { className: "mb-2 text-4xl font-bold", children: "Welcome" }),
       /* @__PURE__ */ jsx("p", { className: "mb-10 text-sm", children: "Please use the form below to update your profile" }),
       /* @__PURE__ */ jsxs(Form$1, { method: "post", children: [
-        /* @__PURE__ */ jsx("input", { type: "hidden", name: "loginType", value: "login" }),
         /* @__PURE__ */ jsxs(Stack, { gap: 7, className: "mb-2", children: [
-          /* @__PURE__ */ jsx(TextInput, { id: "username", name: "username", readOnly: true, labelText: "Email", type: "email", value: user.username, autoComplete: "new-password", required: true }),
+          /* @__PURE__ */ jsx(TextInput, { id: "username", name: "username", readOnly: true, labelText: "Username", type: "text", value: user.username, autoComplete: "new-password", required: true }),
           /* @__PURE__ */ jsx(
             TextInput,
             {
@@ -4294,44 +4303,39 @@ const route5 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
 
 const action$2 = async ({ request }) => {
   const form = await request.formData();
-  const loginType = form.get("loginType");
   const username = form.get("username");
   const password = form.get("password");
   const redirectTo = form.get("redirectTo") || "/";
   if (typeof username !== "string" || typeof password !== "string" || typeof redirectTo !== "string") {
     return Response.json({
-      formError: `Form not submitted correctly.`
+      status: "error",
+      message: `Form not submitted correctly.`
     });
   }
-  const fields = { loginType, username, password };
-  const fieldErrors = {
+  const errors = {
     username: validateUsername(username),
     password: validatePassword(password)
   };
-  if (Object.values(fieldErrors).some(Boolean)) return Response.json({ fieldErrors, fields });
+  if (Object.values(errors).some(Boolean)) {
+    return Response.json({ status: "error", errors });
+  }
   const userExists = await userDb.user.findFirst({
     where: { username }
   });
   if (userExists) {
-    return Response.json({
-      fields,
-      formError: `User with username ${username} already exists`
-    });
+    return Response.json({ status: "error", message: `User with username ${username} already exists` });
   }
   const user = await register({ username, password });
   if (!user) {
-    return Response.json({
-      fields,
-      formError: `Something went wrong trying to create a new user.`
-    });
+    return Response.json({ status: "error", message: `Something went wrong trying to create a new user.` });
   }
-  return createUserSession(user.id, redirectTo);
+  return Response.json({ status: "success", message: `User Created` });
 };
 function CreateUserRoute() {
   const actionData = useActionData();
   const [open, setOpen] = React.useState(false);
   useEffect(() => {
-    if (actionData && actionData.formError) {
+    if (actionData && actionData.message) {
       setOpen(true);
     }
   }, [actionData]);
@@ -4346,9 +4350,9 @@ function CreateUserRoute() {
             TextInput,
             {
               id: "username",
-              labelText: "Email",
+              labelText: "Username",
               name: "username",
-              type: "email",
+              type: "text",
               autoComplete: "new-password",
               required: true,
               invalid: Boolean(actionData?.fieldErrors?.username) || void 0,
@@ -4373,7 +4377,17 @@ function CreateUserRoute() {
         ] }) })
       ] })
     ] }) }),
-    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { title: "Error", subtitle: actionData?.formError, closeOnEscape: true, inline: false, onClose: () => setOpen(false) }) })
+    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(
+      ActionableNotification,
+      {
+        kind: actionData?.status == "error" ? "error" : "success",
+        title: actionData?.status == "error" ? "Error" : "Info",
+        subtitle: actionData?.message,
+        closeOnEscape: true,
+        inline: false,
+        onClose: () => setOpen(false)
+      }
+    ) })
   ] });
 }
 
@@ -4552,7 +4566,7 @@ const route8 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
 }, Symbol.toStringTag, { value: 'Module' }));
 
 const name = "mongocarbon";
-const version = "0.0.4";
+const version = "0.0.6";
 const sideEffects = false;
 const type = "module";
 const scripts = {
@@ -4567,7 +4581,7 @@ const scripts = {
 	start: "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 	typecheck: "tsc",
 	preinstall: "echo \"Welcome to MongoCarbon 0.0.4\"",
-	postinstall: "node console/install && prisma generate && prisma db push",
+	postinstall: "node console/install",
 	test: "echo \"Error: No tests are added\""
 };
 const dependencies = {
@@ -4579,19 +4593,22 @@ const dependencies = {
 	"@codeium/react-code-editor": "^1.0.12",
 	"@ibm/telemetry-js": "^1.8.0",
 	"@json2csv/plainjs": "^7.0.6",
-	"@prisma/client": "^5.22.0",
+	"@prisma/client": "^6.0.0",
 	"@remix-run/node": "^2.14.0",
 	"@remix-run/react": "^2.14.0",
 	"@remix-run/serve": "^2.14.0",
+	"app-root-path": "^3.1.0",
 	bcryptjs: "^2.4.3",
 	bson: "^6.10.0",
+	chalk: "^5.3.0",
 	commander: "^12.1.0",
 	dotenv: "^16.4.5",
+	"dotenv-cli": "^7.4.4",
 	isbot: "^4.1.0",
 	"lodash.isequal": "^4.5.0",
 	mongodb: "^6.10.0",
 	"mongodb-query-parser": "^4.2.6",
-	prisma: "^5.22.0",
+	prisma: "^6.0.0",
 	react: "^18.2.0",
 	"react-dom": "^18.2.0",
 	"scroll-into-view-if-needed": "^3.1.0",
@@ -5094,36 +5111,47 @@ const route11 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
 }, Symbol.toStringTag, { value: 'Module' }));
 
 const action = async ({ request }) => {
-  const form = await request.formData();
-  const loginType = form.get("loginType");
-  const username = form.get("username");
-  const password = form.get("password");
-  const redirectTo = form.get("redirectTo") || "/";
-  if (typeof username !== "string" || typeof password !== "string" || typeof redirectTo !== "string") {
+  try {
+    const form = await request.formData();
+    const username = form.get("username");
+    const password = form.get("password");
+    const redirectTo = form.get("redirectTo") || "/";
+    if (typeof username !== "string" || typeof password !== "string" || typeof redirectTo !== "string") {
+      return Response.json({
+        formError: `Form not submitted correctly.`
+      });
+    }
+    const errors = {
+      username: validateUsername(username),
+      password: !password || password.trim() == "" ? "Please enter your password" : false
+    };
+    if (Object.values(errors).some(Boolean)) {
+      return Response.json({ status: "error", errors });
+    }
+    const user = await login({ username, password });
+    if (!user) {
+      return Response.json({
+        status: "error",
+        message: `The Username and Password combination is incorrect`
+      });
+    }
+    checkUserSession(request);
+    return createUserSession(user.id, redirectTo);
+  } catch (e) {
+    if (e instanceof Response) {
+      return e;
+    }
     return Response.json({
-      formError: `Form not submitted correctly.`
+      status: "error",
+      message: e.message
     });
   }
-  const fields = { loginType, username, password };
-  const fieldErrors = {
-    username: validateUsername(username),
-    password: !password || password.trim() == "" ? "Please enter your password" : false
-  };
-  if (Object.values(fieldErrors).some(Boolean)) return Response.json({ fieldErrors, fields });
-  const user = await login({ username, password });
-  if (!user) {
-    return Response.json({
-      fields,
-      formError: `The Username and Password combination is incorrect`
-    });
-  }
-  return createUserSession(user.id, redirectTo);
 };
 function LoginRoute() {
   const actionData = useActionData();
   const [open, setOpen] = React.useState(false);
   useEffect(() => {
-    if (actionData && actionData.formError) {
+    if (actionData && actionData.message) {
       setOpen(true);
     }
   }, [actionData]);
@@ -5132,19 +5160,19 @@ function LoginRoute() {
       /* @__PURE__ */ jsx(Logo, { className: "h-10 mx-auto" }),
       /* @__PURE__ */ jsxs(Layer, { className: "w-full p-10 mt-5 bg-white border border-solid shadow-lg border-neutral-200", children: [
         /* @__PURE__ */ jsx("h3", { className: "block mb-1 text-3xl font-bold", children: "Login" }),
-        /* @__PURE__ */ jsx("small", { className: "block mb-6 text-xs opacity-50 leading-1", children: "Please enter your email and password below:" }),
+        /* @__PURE__ */ jsx("small", { className: "block mb-6 text-xs opacity-50 leading-1", children: "Please enter your username and password below:" }),
         /* @__PURE__ */ jsx(Form, { method: "post", children: /* @__PURE__ */ jsxs(Stack, { gap: 7, children: [
           /* @__PURE__ */ jsx(
             TextInput,
             {
               id: "username",
               name: "username",
-              labelText: "Email",
-              type: "email",
+              labelText: "Username",
+              type: "text",
               autoComplete: "new-password",
               required: true,
-              invalid: Boolean(actionData?.fieldErrors?.username) || void 0,
-              invalidText: actionData?.fieldErrors?.username ? actionData?.fieldErrors?.username : void 0
+              invalid: Boolean(actionData?.errors?.username) || void 0,
+              invalidText: actionData?.errors?.username ? actionData?.errors?.username : void 0
             }
           ),
           /* @__PURE__ */ jsx(
@@ -5156,8 +5184,8 @@ function LoginRoute() {
               type: "password",
               required: true,
               autoComplete: "new-password",
-              invalid: Boolean(actionData?.fieldErrors?.password) || void 0,
-              invalidText: actionData?.fieldErrors?.password ? actionData?.fieldErrors?.password : void 0
+              invalid: Boolean(actionData?.errors?.password) || void 0,
+              invalidText: actionData?.errors?.password ? actionData?.errors?.password : void 0
             }
           ),
           /* @__PURE__ */ jsx(
@@ -5173,7 +5201,17 @@ function LoginRoute() {
       ] }),
       /* @__PURE__ */ jsx("div", { className: "flex flex-col items-center justify-center mt-4", children: /* @__PURE__ */ jsx(GitHubWidget, { repo: "n-for-all/mongocarbon", version: packageJson.version, title: "MongoCarbon" }) })
     ] }) }),
-    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { title: "Error", subtitle: actionData?.formError, closeOnEscape: true, inline: false, onClose: () => setOpen(false) }) })
+    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(
+      ActionableNotification,
+      {
+        kind: actionData?.status == "error" ? "error" : "success",
+        title: actionData?.status == "error" ? "Error" : "Info",
+        subtitle: actionData?.message,
+        closeOnEscape: true,
+        inline: false,
+        onClose: () => setOpen(false)
+      }
+    ) })
   ] });
 }
 
@@ -5183,7 +5221,7 @@ const route12 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   default: LoginRoute
 }, Symbol.toStringTag, { value: 'Module' }));
 
-const serverManifest = {'entry':{'module':'/assets/entry.client-CiKnG_8o.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-C_ObZ1CP.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':['/assets/root-nUEo1Ulo.css']},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-oCGZi3vN.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/TableRow-Zi2gF0TG.js','/assets/collection-D6bPwBCG.js','/assets/database-Dl88dlG2.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-4-DNu0uQyD.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-CFSJQL9_.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/functions-B7s41jYM.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/bucket-3-B5cXRAyd.js','/assets/TableRow-Zi2gF0TG.js','/assets/bucket-4-DNu0uQyD.js','/assets/index-DCm1eCXF.js','/assets/bucket-17-BFRBnihc.js','/assets/wrapComponent-DVKhoVmh.js','/assets/collection-D6bPwBCG.js','/assets/bucket-10-BakHwRxf.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-C4SxA8eV.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/database-Dl88dlG2.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-Brm3bB66.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/index-BgfNTfNX.js','/assets/connection-DdvKsJfI.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-DhoAshLq.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-7it9tilP.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-gz7svUly.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/TableRow-Zi2gF0TG.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-D0ECua74.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-qSX-I8LH.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/footer-CNEF_Boy.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/Button-Bl4KegFP.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-4EXXHvaL.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-BuqUkaO6.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/package-4EXXHvaL.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/Button-Bl4KegFP.js','/assets/TextInput-CKh2Yhf_.js','/assets/footer-CNEF_Boy.js','/assets/HeaderMenuButton-DkuNHRv5.js','/assets/connection-DdvKsJfI.js','/assets/database-Dl88dlG2.js','/assets/github_widget-X-pkoqDF.js','/assets/logo-BYODAW8L.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/wrapComponent-DVKhoVmh.js','/assets/bucket-3-B5cXRAyd.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-BZOLEvnN.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/footer-CNEF_Boy.js','/assets/HeaderMenuButton-DkuNHRv5.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/bucket-3-B5cXRAyd.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-4EXXHvaL.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-BvDjtSKF.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/github_widget-X-pkoqDF.js','/assets/package-4EXXHvaL.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-10-BakHwRxf.js'],'css':[]}},'url':'/assets/manifest-2f962897.js','version':'2f962897'};
+const serverManifest = {'entry':{'module':'/assets/entry.client-CiKnG_8o.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-C_ObZ1CP.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':['/assets/root-nUEo1Ulo.css']},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-oCGZi3vN.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/TableRow-Zi2gF0TG.js','/assets/collection-D6bPwBCG.js','/assets/database-Dl88dlG2.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-4-DNu0uQyD.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-CFSJQL9_.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/functions-B7s41jYM.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/bucket-3-B5cXRAyd.js','/assets/TableRow-Zi2gF0TG.js','/assets/bucket-4-DNu0uQyD.js','/assets/index-DCm1eCXF.js','/assets/bucket-17-BFRBnihc.js','/assets/wrapComponent-DVKhoVmh.js','/assets/collection-D6bPwBCG.js','/assets/bucket-10-BakHwRxf.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-C4SxA8eV.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/database-Dl88dlG2.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-Brm3bB66.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/index-BgfNTfNX.js','/assets/connection-DdvKsJfI.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-Ceng-Gaf.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-BTgmFHlR.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-gz7svUly.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/TableRow-Zi2gF0TG.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-D0ECua74.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-UFt_NXRy.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/footer-Di0okDi_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/Button-Bl4KegFP.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-BHlkEMfo.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-BiiY_KjC.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/package-BHlkEMfo.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/Button-Bl4KegFP.js','/assets/TextInput-CKh2Yhf_.js','/assets/footer-Di0okDi_.js','/assets/HeaderMenuButton-CAm8d-jH.js','/assets/connection-DdvKsJfI.js','/assets/database-Dl88dlG2.js','/assets/github_widget-X-pkoqDF.js','/assets/logo-BYODAW8L.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/wrapComponent-DVKhoVmh.js','/assets/bucket-3-B5cXRAyd.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-BMPD2SHa.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/footer-Di0okDi_.js','/assets/HeaderMenuButton-CAm8d-jH.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/bucket-3-B5cXRAyd.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-BHlkEMfo.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-BmnM70Yh.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/github_widget-X-pkoqDF.js','/assets/package-BHlkEMfo.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-10-BakHwRxf.js'],'css':[]}},'url':'/assets/manifest-ab38ca53.js','version':'ab38ca53'};
 
 /**
        * `mode` is only relevant for the old Remix compiler but
