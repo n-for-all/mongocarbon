@@ -28,7 +28,7 @@ program.description("Install").action((options) => {
 
 		if (!envContent.includes("DATABASE_URL")) {
 			update.push("DATABASE_URL");
-			envContent += `\nDATABASE_URL="file:${appRoot.toString()}/db.db"\n`;
+			envContent += `\nDATABASE_URL="file:${appRoot.toString()}/mongocarbon/db.db"\n`;
 		}
 
 		if (!envContent.includes("SESSION_SECRET")) {
