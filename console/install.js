@@ -53,16 +53,16 @@ program.description("Install").action((options) => {
 		console.log("");
 		let output = child_process.spawnSync("prisma", ["generate", "--no-hints"], { stdio: "inherit" });
 		if (output && output.error) {
-			console.log(chalk.bgRed(output.error.message));
+			console.log(chalk.red(output.error.message));
 			console.log(output.error);
 		}
 		output = child_process.spawnSync("dotenv", ["-e", envPath, "--", "npx", "prisma", "migrate", "deploy"], { stdio: "inherit" });
 		if (output && output.error) {
-			console.log(chalk.bgRed(output.error));
+			console.log(chalk.red(output.error));
 			console.log(output.error);
 		}
 	} catch (err) {
-		console.log(chalk.bgRed(err.message));
+		console.log(chalk.red(err.message));
 	}
 });
 
