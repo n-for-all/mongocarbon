@@ -2,15 +2,15 @@ import { useActionData, Form } from "@remix-run/react";
 import { userDb } from "../utils/db.server";
 import { ActionFunction, TypedResponse } from "@remix-run/node";
 import { validatePassword, validateUsername } from "~/utils/functions";
-import { createUserSession, login, register } from "~/utils/session.server";
+import { register } from "~/utils/session.server";
 import { Add } from "@carbon/icons-react";
 import { Button, Stack, Tab, TabList, Tabs, TextInput, TabPanels, TabPanel, ActionableNotification, Layer } from "@carbon/react";
 import React, { useEffect } from "react";
 import { Logo } from "~/components/logo";
 
 type ActionResponse = {
-	fields?: { loginType: string; username: string; password: string };
-	formError?: string;
+	status: string;
+	message?: string;
 	fieldErrors?: {
 		username: string | undefined;
 		password: string | undefined;
@@ -19,38 +19,33 @@ type ActionResponse = {
 
 export const action: ActionFunction = async ({ request }): Promise<TypedResponse<ActionResponse>> => {
 	const form = await request.formData();
-	const loginType = form.get("loginType");
 	const username = form.get("username");
 	const password = form.get("password");
 	const redirectTo = form.get("redirectTo") || "/";
 	if (typeof username !== "string" || typeof password !== "string" || typeof redirectTo !== "string") {
 		return Response.json({
-			formError: `Form not submitted correctly.`,
+			status: "error",
+			message: `Form not submitted correctly.`,
 		});
 	}
-	const fields = { loginType, username, password };
-	const fieldErrors = {
+	const errors = {
 		username: validateUsername(username),
 		password: validatePassword(password),
 	};
-	if (Object.values(fieldErrors).some(Boolean)) return Response.json({ fieldErrors, fields });
+	if (Object.values(errors).some(Boolean)) {
+		return Response.json({ status: "error", errors });
+	}
 	const userExists = await userDb.user.findFirst({
 		where: { username },
 	});
 	if (userExists) {
-		return Response.json({
-			fields,
-			formError: `User with username ${username} already exists`,
-		});
+		return Response.json({ status: "error", message: `User with username ${username} already exists` });
 	}
 	const user = await register({ username, password });
 	if (!user) {
-		return Response.json({
-			fields,
-			formError: `Something went wrong trying to create a new user.`,
-		});
+		return Response.json({ status: "error", message: `Something went wrong trying to create a new user.` });
 	}
-	return createUserSession(user.id, redirectTo);
+	return Response.json({ status: "success", message: `User Created` });
 };
 
 export default function CreateUserRoute() {
@@ -58,7 +53,7 @@ export default function CreateUserRoute() {
 	// const [searchParams] = useSearchParams();
 	const [open, setOpen] = React.useState(false);
 	useEffect(() => {
-		if (actionData && actionData.formError) {
+		if (actionData && actionData.message) {
 			setOpen(true);
 		}
 	}, [actionData]);
@@ -77,9 +72,9 @@ export default function CreateUserRoute() {
 							<Stack gap={7}>
 								<TextInput
 									id="username"
-									labelText="Email"
+									labelText="Username"
 									name="username"
-									type="email"
+									type="text"
 									autoComplete="new-password"
 									required
 									invalid={Boolean(actionData?.fieldErrors?.username) || undefined}
@@ -96,7 +91,9 @@ export default function CreateUserRoute() {
 									invalid={Boolean(actionData?.fieldErrors?.password) || undefined}
 									invalidText={actionData?.fieldErrors?.password ? actionData?.fieldErrors?.password : undefined}
 								/>
-								<Button size="sm" type="submit" renderIcon={Add}>Create User</Button>
+								<Button size="sm" type="submit" renderIcon={Add}>
+									Create User
+								</Button>
 							</Stack>
 						</Form>
 					</Layer>
@@ -104,7 +101,14 @@ export default function CreateUserRoute() {
 			</div>
 			{open && (
 				<div className="fixed -translate-x-1/2 left-1/2 bottom-10">
-					<ActionableNotification title="Error" subtitle={actionData?.formError} closeOnEscape inline={false} onClose={() => setOpen(false)} />
+					<ActionableNotification
+						kind={actionData?.status == "error" ? "error" : "success"}
+						title={actionData?.status == "error" ? "Error" : "Info"}
+						subtitle={actionData?.message}
+						closeOnEscape
+						inline={false}
+						onClose={() => setOpen(false)}
+					/>
 				</div>
 			)}
 		</>

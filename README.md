@@ -90,11 +90,11 @@ Or if you want to install a non-global copy:
 
 Then create the first user using the terminal ex:
 
-    node console/user.js user --create --username EMAIL_ADDRESS --password YOUR_PASSWORD
+    node console/user.js user --create --username USERNAME --password YOUR_PASSWORD
 
 You can also delete the user using the terminal ex:
 
-    node console/user.js user --delete --username EMAIL_ADDRESS
+    node console/user.js user --delete --username USERNAME
 
 **To configure:**
 

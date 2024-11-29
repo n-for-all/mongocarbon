@@ -90,9 +90,8 @@ export default function Dashboard() {
 				<h2 className="mb-2 text-4xl font-bold">Welcome</h2>
 				<p className="mb-10 text-sm">Please use the form below to update your profile</p>
 				<Form method="post">
-					<input type="hidden" name="loginType" value="login" />
 					<Stack gap={7} className="mb-2">
-						<TextInput id="username" name="username" readOnly labelText="Email" type="email" value={user.username} autoComplete="new-password" required />
+						<TextInput id="username" name="username" readOnly labelText="Username" type="text" value={user.username} autoComplete="new-password" required />
 						<TextInput
 							id="password"
 							name="password"

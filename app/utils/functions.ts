@@ -1,6 +1,5 @@
 import validator from "validator";
 
-
 export const mongodbOperators = [
 	"$eq",
 	"$gt",
@@ -36,9 +35,8 @@ export const mongodbOperators = [
 ];
 
 export function validateUsername(username: string) {
-	const { isEmail } = validator;
-	if (!isEmail(username)) {
-		return `Usernames must be a valid email address`;
+	if (!isUsername(username)) {
+		return `Usernames must be at least 3 characters long and no spaces included`;
 	}
 }
 export function validatePassword(password: string) {
@@ -185,4 +183,11 @@ export const isValidCollectionName = function (name) {
 	return true;
 };
 
-
+export const isUsername = (username: string) => {
+	if (validator.isEmpty(username) || username.length <= 3) {
+		return false;
+	} else if (!validator.matches(username, "^[a-zA-Z0-9_.-]*$")) {
+		return false;
+	}
+	return true;
+};

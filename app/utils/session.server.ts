@@ -80,23 +80,35 @@ export async function updateUserDbConnection(userId, connectionId, connection: O
 	});
 }
 
+const cookie = {
+	name: "mongocarbon_session",
+	secure: typeof process.env.SECURE_COOKIE != "undefined" ? !!process.env.SECURE_COOKIE : process.env.NODE_ENV === "production",
+	secrets: [sessionSecret],
+	path: "/",
+	maxAge: 60 * 60 * 24 * 30,
+	httpOnly: true,
+};
+
 const storage = createCookieSessionStorage({
-	cookie: {
-		name: "mongocarbon_session",
-		secure: process.env.NODE_ENV === "production",
-		secrets: [sessionSecret],
-		path: "/",
-		maxAge: 60 * 60 * 24 * 30,
-		httpOnly: true,
-	},
+	cookie: cookie,
 });
 
 const commitSession = storage.commitSession;
 
 export { commitSession };
+export function checkUserSession(request) {
+	const url = new URL(request.url);
+	const scheme = url.protocol.replace(":", "");
+
+	if (scheme === "http" && cookie.secure) {
+		throw new Error("Secure cookies cannot be used on HTTP connections, it is either you set SECURE_COOKIE=0 in your .env file or use https connection.");
+	}
+}
+
 export async function createUserSession(userId: string, redirectTo: string): Promise<TypedResponse<never>> {
 	const session = await storage.getSession();
 	session.set("userId", userId);
+
 	return redirect(redirectTo, {
 		headers: {
 			"Set-Cookie": await storage.commitSession(session),
@@ -134,6 +146,9 @@ export async function requireUserId(request: Request, redirectTo: string = new U
 	const session = await getUserSession(request);
 	const userId = session.get("userId");
 	if (!userId || typeof userId !== "string") {
+		if (["", "/", "/login"].includes(redirectTo)) {
+			throw redirect(`/login`);
+		}
 		const searchParams = new URLSearchParams([["redirectTo", redirectTo]]);
 		throw redirect(`/login?${searchParams}`);
 	}

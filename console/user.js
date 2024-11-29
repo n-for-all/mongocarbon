@@ -8,6 +8,15 @@ import packageJson from "../package.json" assert { type: "json" };
 const program = new Command();
 program.version(packageJson.version);
 
+const isUsername = (username: string) => {
+	if (validator.isEmpty(username) || username.length <= 3) {
+		return false;
+	} else if (!validator.matches(username, "^[a-zA-Z0-9_.-]*$")) {
+		return false;
+	}
+	return true;
+};
+
 program
 	.command("user")
 	.description("Manage Users")
@@ -17,10 +26,10 @@ program
 	.option("-p, --password <char>", "Password")
 	.action((options) => {
 		const client = new PrismaClient();
-		const { isStrongPassword, isEmail } = validator;
+		const { isStrongPassword } = validator;
 
-		if (!options.username || !isEmail(options.username)) {
-			console.error("Username must be a valid email address: ", options.username);
+		if (!options.username || !isUsername(options.username)) {
+			console.error("Usernames must be at least 3 characters long and no spaces included: ", options.username);
 			return;
 		}
 
