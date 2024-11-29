@@ -1237,7 +1237,7 @@ async function updateUserDbConnection(userId, connectionId, connection) {
 }
 const cookie = {
   name: "mongocarbon_session",
-  secure: typeof process.env.SECURE_COOKIE != "undefined" ? !!process.env.SECURE_COOKIE : process.env.NODE_ENV === "production",
+  secure: typeof process.env.SECURE_COOKIE != "undefined" ? !!(process.env.SECURE_COOKIE == "1") : process.env.NODE_ENV === "production",
   secrets: [sessionSecret],
   path: "/",
   maxAge: 60 * 60 * 24 * 30,
