@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { join } from "path";
 import { Command } from "commander";
 import appRoot from "app-root-path";
+import * as dotenv from "dotenv";
 
 import packageJson from "../package.json" assert { type: "json" };
 
@@ -41,6 +42,8 @@ program.description("Install").action((options) => {
 		} else {
 			console.log("DATABASE_URL and SESSION_SECRET already exists in the .env file at: ", appRoot.toString());
 		}
+
+        dotenv.config({ path: envPath });
 	} catch (err) {
 		console.log(err);
 	}

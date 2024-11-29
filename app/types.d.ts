@@ -13,23 +13,12 @@ interface MongoDBConfig {
 	blacklist: string[];
 }
 
-interface SiteConfig {
-	host: string;
-	port: number | string;
-	requestSizeLimit: string;
-	sslCert: string;
-	sslEnabled: boolean;
-	sslKey: string;
-}
-
 interface OptionsConfig {
 	gridFSEnabled: boolean;
 }
 
 export interface Config {
-	site: SiteConfig;
 	options: OptionsConfig;
-	rootPath: string;
 }
 
 export interface UserConnection {
