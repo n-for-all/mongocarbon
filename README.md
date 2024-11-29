@@ -90,11 +90,15 @@ Or if you want to install a non-global copy:
 
 Then create the first user using the terminal ex:
 
-    node console/user.js user --create --username USERNAME --password YOUR_PASSWORD
+    cd node_modules/mongocarbon && node console/user.js user --create --username USERNAME --password YOUR_PASSWORD
 
 You can also delete the user using the terminal ex:
 
-    node console/user.js user --delete --username USERNAME
+    cd node_modules/mongocarbon && node console/user.js user --delete --username USERNAME
+
+**After Installation:**
+
+The post install will create a folder "mongocarbon" and .env (if not exists, otherwise it will append the value) inside your app root directory, these files are needed once you update mongocarbon so you don't lose access to the portal
 
 **To configure:**
 
@@ -115,6 +119,9 @@ or if you installed it globally, you can immediately start mongocarbon like this
 
     cd YOUR_PATH/node_modules/mongocarbon/ && pm2 start app.config.js
 
+## Can't login?
+
+You must be using https to login otherwise you need to add SECURE_COOKIE=0 to your .env file in the root of your project
 
 ## Installation fails with `ibmtelemetry: Permission Denied`
 
