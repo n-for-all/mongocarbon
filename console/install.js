@@ -11,8 +11,8 @@ program.version(packageJson.version);
 
 program.description("Install").action((options) => {
 	const sessionSecret = randomBytes(32).toString("hex");
-    console.log("MongoCarbon: Checking for .env file at: ", appRoot);
-	const envPath = join(appRoot, ".env");
+    console.log("MongoCarbon: Checking for .env file at: ", appRoot.toString());
+	const envPath = join(appRoot.toString(), ".env");
 
 	try {
 		let update = [];
@@ -37,9 +37,9 @@ program.description("Install").action((options) => {
 		}
 		if (update.length > 0) {
 			fs.writeFileSync(envPath, envContent);
-			console.log(update.join(" and ") + " have been generated and appended to .env file: ", appRoot);
+			console.log(update.join(" and ") + " have been generated and appended to .env file: ", appRoot.toString());
 		} else {
-			console.log("DATABASE_URL and SESSION_SECRET already exists in the .env file at: ", appRoot);
+			console.log("DATABASE_URL and SESSION_SECRET already exists in the .env file at: ", appRoot.toString());
 		}
 	} catch (err) {
 		console.log(err);
