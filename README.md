@@ -15,7 +15,7 @@
 
 <div align="center">
   <strong>
-  <h2>A web-based MongoDB admin interface written with Remix, Vite, IBM Carbon Design and Prisma</h2><br />
+  <h2>A web-based MongoDB admin interface written with Remix, Vite, IBM Carbon Design, TailwindCSS and Prisma</h2><br />
   <a href="https://mongocarbon.com">MongoCarbon</a>: Similar to Mongo Express, MongoDB Compass, MongoUi...<br /><br />
   </strong>
   MongoCarbon offers database management for mongodb instances

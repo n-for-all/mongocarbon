@@ -344,7 +344,10 @@ export default function Dashboard() {
 
 	useEffect(() => {
 		if (fetcher.data && fetcher.data.status == "success") {
-			window.location.href = fetcher.data.redirect || "/";
+			let redirectTo = fetcher.data.redirect || "/";
+			setTimeout(() => {
+				window.location.href = redirectTo;
+			}, 1000);
 			return;
 		} else if (fetcher.data && fetcher.data.status == "error") {
 			setError(fetcher.data.message || null);
