@@ -1,6 +1,6 @@
 {
 	"name": "mongocarbon",
-	"version": "0.0.8",
+	"version": "0.0.9",
 	"private": false,
 	"sideEffects": false,
 	"type": "module",
@@ -16,7 +16,7 @@
 		"start": "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 		"typecheck": "tsc",
 		"preinstall": "echo \"Welcome to Mongo Carbon\"",
-		"postinstall": "npm run build && node console/install.js",
+		"postinstall": "node console/install.js",
 		"test": "echo \"Error: No tests are added\""
 	},
 	"dependencies": {
