@@ -15,7 +15,7 @@
 
 <div align="center">
   <strong>
-  <h2>A web-based MongoDB admin interface written with Remix, Vite, IBM Carbon Design, TailwindCSS and Prisma</h2><br />
+  <h2>A web-based MongoDB admin interface written with Remix, Vite, TailwindCSS and Prisma</h2><br />
   <a href="https://mongocarbon.com">MongoCarbon</a>: Similar to Mongo Express, MongoDB Compass, MongoUi...<br /><br />
   </strong>
   MongoCarbon offers database management for mongodb instances
@@ -122,31 +122,6 @@ or if you installed it globally, you can immediately start mongocarbon like this
 ## Can't login?
 
 You must be using https to login otherwise you need to add SECURE_COOKIE=0 to your .env file in the root of your project
-
-## Installation fails with `ibmtelemetry: Permission Denied`
-
--   If you are installing the package as part of another project, make sure your package.json contains the a name and the version for the package
--   If needed, create a new file named `telemetry.js` in your project's root directory. Add the following code to the file:
-
-   ```javascript
-   #!/usr/bin/env node
-   
-   ```
-
--   Update `package.json` with 
-   ```json
-   {
-       "name": "your-project-name",
-       "version": "1.0.0",
-       "scripts": {
-           // ...other scripts
-       },
-       "bin": {
-           "ibmtelemetry": "./telemetry.js"
-       }
-   }
-   ```
--   If still doesn't work, then create a new `package.json` with `npm init` and install mongocarbon then add your dependencies
 
 ## Usage (Docker)
 

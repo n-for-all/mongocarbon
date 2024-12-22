@@ -173,7 +173,7 @@ export const GithubButton = ({ repo, version, title }) => {
 		<div className="inline-flex items-center">
 			<a
 				target="_blank"
-				className="inline-flex w-9 overflow-hidden lg:w-auto items-center gap-2 px-2 py-1.5 text-sm border border-solid rounded-sm border-neutral-300 bg-neutral-50"
+				className="inline-flex w-9 overflow-hidden lg:w-auto items-center gap-2 px-2 py-1.5 text-sm border border-solid  border-neutral-300 bg-neutral-50"
 				href={repoUrl}>
 				<LogoGithub className="flex-shrink-0 w-5 h-5" /> {title} {version ? <b>v{version}</b> : null}
 			</a>
@@ -254,7 +254,7 @@ const GitHubWidget: React.FC<GitHubWidgetProps> = ({ repo, travis, title, versio
 	} else {
 		output = (
 			<div className={"overflow-hidden transition-all duration-500 " + (expand ? "max-h-48" : "max-h-0")}>
-				<div className={"p-4 overflow-auto h-full  border border-solid rounded-md border-neutral-300 bg-neutral-50 "}>
+				<div className={"p-4 overflow-auto h-full  border border-solid  border-neutral-300 bg-neutral-50 "}>
 					<div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2">
 						<h3 className="flex gap-0.5 font-semibold text-neutral-600 text-md">
 							<LogoGithub className="w-6 h-6 mr-1" />
@@ -316,7 +316,7 @@ const GitHubWidget: React.FC<GitHubWidgetProps> = ({ repo, travis, title, versio
 								</a>
 							)}
 							<a
-								className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-solid rounded-sm text-neutral-600 border-neutral-200 hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-200"
+								className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-solid  text-neutral-600 border-neutral-200 hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-200"
 								href={`${repoUrl}/zipball/master`}>
 								<Download />
 							</a>
@@ -329,7 +329,7 @@ const GitHubWidget: React.FC<GitHubWidgetProps> = ({ repo, travis, title, versio
 
 	return (
 		<>
-			<div className="inline-flex mb-4 border border-solid rounded-sm border-neutral-300 bg-neutral-50">
+			<div className="inline-flex mb-4 border border-solid  border-neutral-300 bg-neutral-50">
 				<a target="_blank" className="inline-flex items-center gap-2 px-2 py-1 my-1 text-sm " href={repoUrl}>
 					<LogoGithub className="w-6 h-6" /> {title} <b>v{version}</b>
 				</a>

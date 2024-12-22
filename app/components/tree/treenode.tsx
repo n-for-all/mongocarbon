@@ -1,9 +1,9 @@
-import { Add, Checkmark, ChevronDown, ChevronRight, Close, Copy, Edit, Save, TrashCan } from "@carbon/icons-react";
+import { PlusIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, XIcon, PencilIcon, TrashIcon } from "@primer/octicons-react";
 import React, { useRef, useState } from "react";
 import { CopyText } from "../copy_text";
 import AutocompleteTextField from "../autocomplete/textarea";
 import { mongodbOperators } from "~/utils/functions";
-import { BSON, EJSON, ObjectId } from "bson";
+import { EJSON, ObjectId } from "bson";
 
 interface TreeNodeProps {
 	data: any;
@@ -79,7 +79,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 			return (
 				<div className="flex items-center gap-2">
 					<AutocompleteTextField
-						className="w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid rounded-sm border-neutral-300"
+						className="w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300"
 						trigger={["$"].concat(autocompleteItems.map((e) => e.substring(0, 1)))}
 						options={mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems)}
 						attributes={{ placeholder: "Value (JSON or String or Number ...)", style: { resize: "both", ...style } }}
@@ -88,10 +88,10 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 						onChange={(value) => setEditValue(value)}
 					/>
 					<IconButton onClick={handleSave} className="">
-						<Checkmark className="w-4 h-4" />
+						<CheckIcon className="w-4 h-4" />
 					</IconButton>
 					<IconButton onClick={() => setIsEditing(false)} className="">
-						<Close className="w-4 h-4" />
+						<XIcon className="w-4 h-4" />
 					</IconButton>
 				</div>
 			);
@@ -135,7 +135,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 		return (
 			<div className="flex items-center gap-1 mt-1 mb-1 ml-4">
 				<AutocompleteTextField
-					className="w-32 h-6 px-1 text-xs font-medium border border-solid rounded-sm border-neutral-300"
+					className="w-32 h-6 px-1 text-xs font-medium border border-solid  border-neutral-300"
 					trigger={["$"].concat(autocompleteItems.map((e) => e.substring(0, 1)))}
 					options={mongodbOperators.concat(autocompleteItems)}
 					attributes={{ placeholder: "Key" }}
@@ -145,7 +145,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 				/>
 				<span className="text-xs">:</span>
 				<AutocompleteTextField
-					className="w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid rounded-sm border-neutral-300"
+					className="w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300"
 					trigger={["$"].concat(autocompleteItems.map((e) => e.substring(0, 1)))}
 					options={mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems)}
 					attributes={{ placeholder: "Value (JSON or String or Number ...)", style: { resize: "both" } }}
@@ -154,7 +154,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 					onChange={(value) => setNewValue(value)}
 				/>
 				<IconButton onClick={handleAdd} disabled={!newKey.trim()}>
-					<Checkmark className="w-4 h-4" />
+					<CheckIcon className="w-4 h-4" />
 				</IconButton>
 				<IconButton
 					onClick={() => {
@@ -162,7 +162,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 						setNewValue(() => "");
 						setIsAddingNew(false);
 					}}>
-					<Close className="w-4 h-4" />
+					<XIcon className="w-4 h-4" />
 				</IconButton>
 			</div>
 		);
@@ -181,10 +181,10 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 					{!isEditing && allowEdit && (
 						<>
 							<IconButton onClick={handleEdit} title="Edit">
-								<Edit className="w-4 h-4" />
+								<PencilIcon className="w-4 h-4" />
 							</IconButton>
 							<IconButton onClick={() => onDelete?.(path)} className="px-1 py-1 text-red-600 hover:bg-neutral-200">
-								<TrashCan className="w-4 h-4" />
+								<TrashIcon className="w-4 h-4" />
 							</IconButton>
 						</>
 					)}
@@ -209,7 +209,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 		<div>
 			<div className={"relative flex items-center gap-1 py-0.5 text-sm group" + (isRoot ? " mb-1" : "")}>
 				<button onClick={handleToggle} className="w-4 h-4">
-					{isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+					{isExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
 				</button>
 				<span className="flex items-center gap-1">
 					<span className="flex font-medium">{label}</span>
@@ -220,10 +220,10 @@ export const TreeNode: React.FC<TreeNodeProps> = ({ expanded, allowEdit, data, p
 				{!isEditing && allowEdit && (
 					<div className="flex items-center h-5 gap-1 ml-10 opacity-0 group-hover:opacity-100 left-full">
 						<IconButton onClick={() => setIsAddingNew(true)}>
-							<Add className="w-4 h-4" />
+							<PlusIcon className="w-4 h-4" />
 						</IconButton>
 						<IconButton onClick={() => onDelete?.(path)} className="text-red-600">
-							<TrashCan className="w-4 h-4" />
+							<TrashIcon className="w-4 h-4" />
 						</IconButton>
 					</div>
 				)}

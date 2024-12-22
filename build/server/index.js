@@ -4,9 +4,17 @@ import { createReadableStreamFromReadable, createCookieSessionStorage, redirect 
 import { RemixServer, Outlet, Meta, Links, ScrollRestoration, Scripts, useFetcher, Form, useLoaderData, useNavigate, useActionData, Link, redirect as redirect$1, useLocation } from '@remix-run/react';
 import { isbot } from 'isbot';
 import { renderToPipeableStream } from 'react-dom/server';
-import { Modal, Stack, FormGroup, TextInput, InlineNotification, Grid, Column, Button, Search, Select, SelectItem, Accordion, AccordionItem, Table, TableBody, TableRow, TableCell, TableHead, TableHeader, Tabs, TabList, Tab, TabPanels, TabPanel, ButtonSkeleton, Pagination, Checkbox, NumberInput, Dropdown, Layer, ActionableNotification, Form as Form$1, Header, SkipToContent, HeaderName, HeaderGlobalBar, HeaderGlobalAction, TreeNode as TreeNode$1, TreeView, HeaderMenuButton, HeaderNavigation, HeaderMenuItem, SideNav, SideNavItems, HeaderSideNavItems } from '@carbon/react';
-import { Checkmark, Copy, Add, TrashCan, SortAscending, SortDescending, DataTable, ArrowRight, Edit, ChevronDown, ChevronRight, Close, ListBoxes, TableSplit, Connect, ConnectSource, UserAvatar, Logout, LogoGithub, Watch, Fork, Download, ChevronUp, DataView } from '@carbon/icons-react';
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import React__default, { useState, useEffect, useRef } from 'react';
+import * as ToastPrimitives from '@radix-ui/react-toast';
+import { cva } from 'class-variance-authority';
+import { X, ChevronDown as ChevronDown$1, ChevronUp as ChevronUp$1, Check, PanelLeft } from 'lucide-react';
+import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { SearchIcon, XIcon, CheckIcon, CopyIcon, PlusIcon, TrashIcon, SortAscIcon, SortDescIcon, DatabaseIcon, ArrowRightIcon, PencilIcon, ChevronDownIcon, ChevronRightIcon, TriangleLeftIcon, TriangleRightIcon, ListUnorderedIcon, ServerIcon, VersionsIcon, SignOutIcon, ThreeBarsIcon, EyeIcon } from '@primer/octicons-react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { Slot } from '@radix-ui/react-slot';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as dotenv from 'dotenv';
 import path from 'node:path';
 import appRoot from 'app-root-path';
@@ -14,11 +22,17 @@ import mongodb, { Timestamp, Binary } from 'mongodb';
 import validator from 'validator';
 import parser from 'mongodb-query-parser';
 import { EJSON, ObjectId } from 'bson';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import getCaretCoordinates from 'textarea-caret';
 import scrollIntoView from 'scroll-into-view-if-needed';
 import { CodeiumEditor } from '@codeium/react-code-editor/dist/esm/index.js';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
+import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
+import * as AvatarPrimitive from '@radix-ui/react-avatar';
+import * as SeparatorPrimitive from '@radix-ui/react-separator';
 
 const ABORT_DELAY = 5e3;
 function handleRequest(request, responseStatusCode, responseHeaders, remixContext, loadContext) {
@@ -120,17 +134,298 @@ const entryServer = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.definePropert
   default: handleRequest
 }, Symbol.toStringTag, { value: 'Module' }));
 
+const TOAST_LIMIT = 1;
+const TOAST_REMOVE_DELAY = 1e6;
+let count = 0;
+function genId() {
+  count = (count + 1) % Number.MAX_SAFE_INTEGER;
+  return count.toString();
+}
+const toastTimeouts = /* @__PURE__ */ new Map();
+const addToRemoveQueue = (toastId) => {
+  if (toastTimeouts.has(toastId)) {
+    return;
+  }
+  const timeout = setTimeout(() => {
+    toastTimeouts.delete(toastId);
+    dispatch({
+      type: "REMOVE_TOAST",
+      toastId
+    });
+  }, TOAST_REMOVE_DELAY);
+  toastTimeouts.set(toastId, timeout);
+};
+const reducer = (state, action) => {
+  switch (action.type) {
+    case "ADD_TOAST":
+      return {
+        ...state,
+        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT)
+      };
+    case "UPDATE_TOAST":
+      return {
+        ...state,
+        toasts: state.toasts.map((t) => t.id === action.toast.id ? { ...t, ...action.toast } : t)
+      };
+    case "DISMISS_TOAST": {
+      const { toastId } = action;
+      if (toastId) {
+        addToRemoveQueue(toastId);
+      } else {
+        state.toasts.forEach((toast2) => {
+          addToRemoveQueue(toast2.id);
+        });
+      }
+      return {
+        ...state,
+        toasts: state.toasts.map(
+          (t) => t.id === toastId || toastId === void 0 ? {
+            ...t,
+            open: false
+          } : t
+        )
+      };
+    }
+    case "REMOVE_TOAST":
+      if (action.toastId === void 0) {
+        return {
+          ...state,
+          toasts: []
+        };
+      }
+      return {
+        ...state,
+        toasts: state.toasts.filter((t) => t.id !== action.toastId)
+      };
+  }
+};
+const listeners = [];
+let memoryState = { toasts: [] };
+function dispatch(action) {
+  memoryState = reducer(memoryState, action);
+  listeners.forEach((listener) => {
+    listener(memoryState);
+  });
+}
+function toast({ ...props }) {
+  const id = genId();
+  const update = (props2) => dispatch({
+    type: "UPDATE_TOAST",
+    toast: { ...props2, id }
+  });
+  const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
+  dispatch({
+    type: "ADD_TOAST",
+    toast: {
+      ...props,
+      id,
+      open: true,
+      onOpenChange: (open) => {
+        if (!open) dismiss();
+      }
+    }
+  });
+  return {
+    id,
+    dismiss,
+    update
+  };
+}
+function useToast() {
+  const [state, setState] = React.useState(memoryState);
+  React.useEffect(() => {
+    listeners.push(setState);
+    return () => {
+      const index = listeners.indexOf(setState);
+      if (index > -1) {
+        listeners.splice(index, 1);
+      }
+    };
+  }, [state]);
+  return {
+    ...state,
+    toast,
+    dismiss: (toastId) => dispatch({ type: "DISMISS_TOAST", toastId })
+  };
+}
+
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
+function matches(event, array) {
+  for (let i = 0; i < array.length; i++) {
+    if (match(event, array[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+function match(eventOrCode, {
+  key,
+  which,
+  keyCode,
+  code
+} = {}) {
+  if (typeof eventOrCode === "string") {
+    return eventOrCode === key;
+  }
+  if (typeof eventOrCode === "number") {
+    return eventOrCode === which || eventOrCode === keyCode;
+  }
+  if (eventOrCode.key && Array.isArray(key)) {
+    return key.indexOf(eventOrCode.key) !== -1;
+  }
+  return eventOrCode.key === key || eventOrCode.which === which || eventOrCode.keyCode === keyCode || eventOrCode.code === code;
+}
+const isArraysEqual = (a, b) => {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; ++i) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
+const EnterKey = {
+  key: "Enter",
+  which: 13,
+  keyCode: 13,
+  code: "Enter"
+};
+const SpaceKey = {
+  key: " ",
+  which: 32,
+  keyCode: 32,
+  code: "Space"
+};
+const ArrowLeftKey = {
+  key: "ArrowLeft",
+  which: 37,
+  keyCode: 37,
+  code: "ArrowLeft"
+};
+const ArrowUpKey = {
+  key: "ArrowUp",
+  which: 38,
+  keyCode: 38,
+  code: "ArrowUp"
+};
+const ArrowRightKey = {
+  key: "ArrowRight",
+  which: 39,
+  keyCode: 39,
+  code: "ArrowRight"
+};
+const ArrowDownKey = {
+  key: "ArrowDown",
+  which: 40,
+  keyCode: 40,
+  code: "ArrowDown"
+};
+const HomeKey = {
+  key: "Home",
+  which: 36,
+  keyCode: 36,
+  code: "Numpad7"
+};
+const EndKey = {
+  key: "End",
+  which: 35,
+  keyCode: 35,
+  code: "Numpad1"
+};
+
+const ToastProvider = ToastPrimitives.Provider;
+const ToastViewport = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    ToastPrimitives.Viewport,
+    {
+      ref,
+      className: cn("fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]", className),
+      ...props
+    }
+  )
+);
+ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
+const toastVariants = cva(
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-2 overflow-hidden  border p-4 pr-6 transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
+  {
+    variants: {
+      variant: {
+        default: "border bg-background text-foreground",
+        error: "error group border-error bg-error text-error-foreground",
+        warning: "warning group border-warning bg-warning text-warning-foreground",
+        success: "success group border-success bg-success text-success-foreground"
+      }
+    },
+    defaultVariants: {
+      variant: "default"
+    }
+  }
+);
+const Toast = React.forwardRef(
+  ({ className, variant, ...props }, ref) => {
+    return /* @__PURE__ */ jsx(ToastPrimitives.Root, { ref, className: cn(toastVariants({ variant }), className), ...props });
+  }
+);
+Toast.displayName = ToastPrimitives.Root.displayName;
+const ToastAction = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    ToastPrimitives.Action,
+    {
+      ref,
+      className: cn(
+        "inline-flex h-8 shrink-0 items-center justify-center  border bg-transparent px-3 text-sm font-medium transition-colors hover:bg-secondary focus:outline-none focus:ring-1 focus:ring-ring disabled:pointer-events-none disabled:opacity-50 group-[.error]:border-muted/40 group-[.error]:hover:border-error/30 group-[.error]:hover:bg-error group-[.error]:hover:text-error-foreground group-[.error]:focus:ring-error",
+        className
+      ),
+      ...props
+    }
+  )
+);
+ToastAction.displayName = ToastPrimitives.Action.displayName;
+const ToastClose = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    ToastPrimitives.Close,
+    {
+      ref,
+      className: cn(
+        "absolute right-1 top-1  p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-1 group-hover:opacity-100 group-[.error]:text-red-300 group-[.error]:hover:text-red-50 group-[.error]:focus:ring-red-400 group-[.error]:focus:ring-offset-red-600",
+        className
+      ),
+      "toast-close": "",
+      ...props,
+      children: /* @__PURE__ */ jsx(X, { className: "w-4 h-4" })
+    }
+  )
+);
+ToastClose.displayName = ToastPrimitives.Close.displayName;
+const ToastTitle = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(ToastPrimitives.Title, { ref, className: cn("text-sm font-semibold [&+div]:text-xs", className), ...props })
+);
+ToastTitle.displayName = ToastPrimitives.Title.displayName;
+const ToastDescription = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(ToastPrimitives.Description, { ref, className: cn("text-sm opacity-90", className), ...props })
+);
+ToastDescription.displayName = ToastPrimitives.Description.displayName;
+
+function Toaster() {
+  const { toasts } = useToast();
+  return /* @__PURE__ */ jsxs(ToastProvider, { children: [
+    toasts.map(function({ id, title, description, action, ...props }) {
+      return /* @__PURE__ */ jsxs(Toast, { ...props, children: [
+        /* @__PURE__ */ jsxs("div", { className: "grid gap-1", children: [
+          title && /* @__PURE__ */ jsx(ToastTitle, { children: title }),
+          description && /* @__PURE__ */ jsx(ToastDescription, { children: description })
+        ] }),
+        action,
+        /* @__PURE__ */ jsx(ToastClose, {})
+      ] }, id);
+    }),
+    /* @__PURE__ */ jsx(ToastViewport, {})
+  ] });
+}
+
 const links = () => [
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  {
-    rel: "preconnect",
-    href: "https://fonts.gstatic.com",
-    crossOrigin: "anonymous"
-  },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
-  },
   {
     rel: "icon",
     type: "image/svg+xml",
@@ -148,7 +443,8 @@ function Layout$2({ children }) {
     /* @__PURE__ */ jsxs("body", { children: [
       children,
       /* @__PURE__ */ jsx(ScrollRestoration, {}),
-      /* @__PURE__ */ jsx(Scripts, {})
+      /* @__PURE__ */ jsx(Scripts, {}),
+      /* @__PURE__ */ jsx(Toaster, {})
     ] })
   ] });
 }
@@ -163,6 +459,239 @@ const route0 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   links
 }, Symbol.toStringTag, { value: 'Module' }));
 
+const NativeInput = React.forwardRef(({ className, type, invalid, invalidClassName, ...props }, ref) => {
+  let additionClassName = "";
+  if (invalid) {
+    additionClassName = invalidClassName || "border-red-500 bg-red-200";
+  }
+  return /* @__PURE__ */ jsx(
+    "input",
+    {
+      type,
+      className: cn(
+        "flex h-9 w-full border-b border-black bg-white px-3 py-1 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        className,
+        additionClassName
+      ),
+      ref,
+      ...props
+    }
+  );
+});
+const Input = React.forwardRef(({ invalidText, helperText, hideLabel, labelText, containerClassName, ...props }, ref) => {
+  return /* @__PURE__ */ jsxs("div", { className: cn("flex flex-col gap-1", containerClassName), children: [
+    labelText && !hideLabel ? /* @__PURE__ */ jsx("label", { className: "text-sm tracking-wide", children: labelText }) : null,
+    /* @__PURE__ */ jsx(NativeInput, { ...props }),
+    invalidText ? /* @__PURE__ */ jsx("small", { className: "text-red-500", children: invalidText }) : null,
+    helperText ? /* @__PURE__ */ jsx("small", { className: "text-xs text-black opacity-50", children: helperText }) : null
+  ] });
+});
+const SearchInput = ({ className, value, onChange, ...props }) => {
+  return /* @__PURE__ */ jsxs("div", { className: "relative flex items-center", children: [
+    /* @__PURE__ */ jsx(SearchIcon, { className: "absolute left-3 text-muted-foreground" }),
+    /* @__PURE__ */ jsx(NativeInput, { type: "text", value, onChange: (e) => onChange(e.target.value), className: cn("pl-10 pr-4 min-w-48", className), ...props }),
+    value && value != "" && /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        onClick: (e) => {
+          e.preventDefault();
+          onChange("");
+        },
+        className: "absolute right-3 text-muted-foreground",
+        children: /* @__PURE__ */ jsx(XIcon, {})
+      }
+    )
+  ] });
+};
+
+const Dialog = DialogPrimitive.Root;
+const DialogPortal = DialogPrimitive.Portal;
+const DialogOverlay = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    DialogPrimitive.Overlay,
+    {
+      ref,
+      className: cn(
+        "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        className
+      ),
+      ...props
+    }
+  )
+);
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
+const DialogContent = React.forwardRef(
+  ({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(DialogPortal, { children: [
+    /* @__PURE__ */ jsx(DialogOverlay, {}),
+    /* @__PURE__ */ jsxs(
+      DialogPrimitive.Content,
+      {
+        ref,
+        className: cn(
+          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-3xl translate-x-[-50%] translate-y-[-50%] gap-4 bg-background p-4 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] max-h-[calc(100%_-_4rem)] mt-4 mb-4 overflow-auto",
+          className
+        ),
+        ...props,
+        children: [
+          children,
+          /* @__PURE__ */ jsxs(DialogPrimitive.Close, { className: "absolute right-4 top-4 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground", children: [
+            /* @__PURE__ */ jsx(X, { className: "w-5 h-5" }),
+            /* @__PURE__ */ jsx("span", { className: "sr-only", children: "Close" })
+          ] })
+        ]
+      }
+    )
+  ] })
+);
+DialogContent.displayName = DialogPrimitive.Content.displayName;
+const DialogHeader = ({ className, ...props }) => /* @__PURE__ */ jsx("div", { className: cn("flex flex-col space-y-1.5 text-center sm:text-left", className), ...props });
+DialogHeader.displayName = "DialogHeader";
+const DialogFooter = ({ className, ...props }) => /* @__PURE__ */ jsx("div", { className: cn("flex flex-col-reverse sm:flex-row", className), ...props });
+DialogFooter.displayName = "DialogFooter";
+const DialogTitle = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(DialogPrimitive.Title, { ref, className: cn("text-lg leading-none tracking-wide", className), ...props })
+);
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
+const DialogDescription = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(DialogPrimitive.Description, { ref, className: cn("text-sm opacity-60 text-muted-foreground", className), ...props })
+);
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
+
+const TooltipProvider = TooltipPrimitive.Provider;
+const Tooltip = ({ children, content, delayDuration, open, defaultOpen, showArrow, "data-state": dataState, onOpenChange, className, ...props }) => {
+  if (!content) {
+    return /* @__PURE__ */ jsx(Fragment, { children });
+  }
+  return /* @__PURE__ */ jsx(TooltipProvider, { children: /* @__PURE__ */ jsxs(TooltipPrimitive.Root, { delayDuration, "data-state": dataState || "instant-open", defaultOpen, onOpenChange, children: [
+    /* @__PURE__ */ jsx(TooltipPrimitive.Trigger, { asChild: true, children }),
+    /* @__PURE__ */ jsxs(
+      TooltipPrimitive.Content,
+      {
+        className: cn(
+          "z-50 overflow-hidden  bg-tooltip px-3 py-1.5 text-xs text-tooltip-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+          className
+        ),
+        ...props,
+        children: [
+          content,
+          showArrow && /* @__PURE__ */ jsx(TooltipPrimitive.Arrow, { width: 11, height: 5 })
+        ]
+      }
+    )
+  ] }) });
+};
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap hover:cursor-pointer text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  {
+    variants: {
+      variant: {
+        primary: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        danger: "bg-error text-error-foreground hover:bg-error/90",
+        error: "bg-error text-error-foreground hover:bg-error/90",
+        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        dark: "bg-neutral-700 text-white hover:bg-neutral-800",
+        ghost: "hover:bg-neutral-100 hover:text-neutral-800",
+        link: "text-primary underline-offset-4 hover:underline",
+        none: ""
+      },
+      size: {
+        default: "h-9 px-4 py-2 text-sm",
+        sm: "h-9  px-3 text-sm",
+        md: "h-10  px-4",
+        xs: "h-8  px-3 text-xs",
+        lg: "h-10  px-8",
+        icon: "h-9 w-9"
+      },
+      iconPosition: {
+        left: "flex-row",
+        right: "flex-row-reverse"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default"
+    }
+  }
+);
+const Button = React.forwardRef(
+  ({ className, hasIconOnly, tooltipAlignment, tooltipPosition, iconPosition, as, to, href, variant, icon, size, asChild = false, tooltip, loading, children, ...props }, ref) => {
+    const Comp = asChild ? Slot : href || to || as == "a" ? "a" : "button";
+    let loader = null;
+    if (loading) {
+      let loaderSize = "";
+      switch (size) {
+        case "sm":
+          loaderSize = "h-4 w-4";
+          break;
+        case "lg":
+          loaderSize = "h-6 w-6";
+          break;
+        default:
+          loaderSize = "h-5 w-5";
+      }
+      loader = /* @__PURE__ */ jsx("span", { className: "animate-spin border-t-2 border-b-2 border-white rounded-full " + loaderSize });
+    } else {
+      loader = icon ? /* @__PURE__ */ jsx("span", { className: hasIconOnly ? "" : iconPosition == "right" ? "ml-4" : "mr-4", children: icon }) : null;
+    }
+    const linkTo = href || to;
+    return /* @__PURE__ */ jsx(Tooltip, { content: tooltip, side: tooltipPosition, align: tooltipAlignment, open: !!tooltip, children: /* @__PURE__ */ jsxs(Comp, { className: cn(buttonVariants({ variant, size, className, iconPosition })), ref, ...props, href: linkTo, children: [
+      loader,
+      children
+    ] }) });
+  }
+);
+Button.displayName = "Button";
+const ButtonSkeleton = ({ variant = "default", size = "default", className }) => {
+  return /* @__PURE__ */ jsx("div", { className: cn("inline-block w-32 h-10 bg-gray-300  animate-pulse", buttonVariants({ variant, size, className })) });
+};
+
+const Modal = ({
+  open,
+  modalHeading,
+  modalLabel,
+  closeOnEscape,
+  primaryButtonText,
+  secondaryButtonText,
+  danger,
+  loading,
+  loadingDescription,
+  onClose,
+  onPrimaryClick,
+  onSecondaryClick,
+  children
+}) => {
+  React.useEffect(() => {
+    if (closeOnEscape && onClose) {
+      const handleKeyDown = (event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      };
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+  }, [closeOnEscape, onClose]);
+  return /* @__PURE__ */ jsx(Dialog, { open, onOpenChange: (open2) => !open2 && onClose && onClose(), children: /* @__PURE__ */ jsxs(DialogContent, { className: "p-0 bg-neutral-100", children: [
+    /* @__PURE__ */ jsxs("div", { className: "p-4", children: [
+      /* @__PURE__ */ jsxs(DialogHeader, { children: [
+        modalLabel ? /* @__PURE__ */ jsx(DialogDescription, { children: modalLabel }) : null,
+        modalHeading ? /* @__PURE__ */ jsx(DialogTitle, { children: modalHeading }) : null
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "py-6", children })
+    ] }),
+    /* @__PURE__ */ jsxs(DialogFooter, { className: "gap-0 p-0", children: [
+      secondaryButtonText ? /* @__PURE__ */ jsx(Button, { variant: "dark", className: "justify-start flex-1 pt-6 pb-10 mr-px text-left rounded-none text-md", onClick: onSecondaryClick || onClose, children: secondaryButtonText }) : null,
+      primaryButtonText ? /* @__PURE__ */ jsx(Button, { className: "justify-start flex-1 pt-6 pb-10 text-left rounded-none text-md", loading, onClick: onPrimaryClick, variant: danger ? "error" : "default", children: loading && loadingDescription ? loadingDescription : primaryButtonText }) : null
+    ] })
+  ] }) });
+};
+
 const CollectionAddModal = ({ dbName, open, onClose, onSuccess }) => {
   const [state, setState] = useState({ collectionName: "" });
   const [errors, setErrors] = useState({});
@@ -170,24 +699,27 @@ const CollectionAddModal = ({ dbName, open, onClose, onSuccess }) => {
   useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
       setDescription("Created!");
-      setStatus("finished");
+      toast({
+        title: "Connected!",
+        description: fetcher.data.message || "Connected!",
+        type: "background"
+      });
       setTimeout(() => {
         onSuccess(dbName, state.collectionName.trim());
         onClose();
       }, 2e3);
     } else if (fetcher.data && fetcher.data.status == "error") {
       setDescription(fetcher.data.message || "");
-      setStatus("error");
       setErrors(fetcher.data.errors || {});
-      setTimeout(() => {
-        resetStatus();
-      }, 2e3);
+      toast({
+        title: "Error",
+        description: fetcher.data.message || "An error occurred",
+        type: "background"
+      });
     }
   }, [fetcher.data]);
-  const [status, setStatus] = useState("inactive");
   const [description, setDescription] = useState("Creating...");
   const submit = async () => {
-    setStatus("active");
     fetcher.submit(
       {
         create: state
@@ -199,30 +731,24 @@ const CollectionAddModal = ({ dbName, open, onClose, onSuccess }) => {
       }
     );
   };
-  const resetStatus = () => {
-    setStatus("inactive");
-    setDescription("Creating...");
-  };
   return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx(
     Modal,
     {
       open,
-      onRequestClose: onClose,
-      onRequestSubmit: submit,
-      loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+      onClose,
+      onPrimaryClick: submit,
+      loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
       loadingDescription: description,
-      onLoadingSuccess: resetStatus,
       modalHeading: "Create a new collection",
       modalLabel: "Collection",
       primaryButtonText: "Create",
       secondaryButtonText: "Cancel",
-      children: /* @__PURE__ */ jsx(Form, { "aria-label": "Collection form", autoComplete: "new-password", children: /* @__PURE__ */ jsx(Stack, { gap: 4, children: /* @__PURE__ */ jsx(FormGroup, { legendText: "Collection Name", children: /* @__PURE__ */ jsx(
-        TextInput,
+      children: /* @__PURE__ */ jsx(Form, { "aria-label": "Collection form", autoComplete: "new-password", children: /* @__PURE__ */ jsx(
+        Input,
         {
           id: "collectionName",
           labelText: "Collection Name",
           autoComplete: "new-password",
-          hideLabel: true,
           type: "text",
           required: true,
           invalid: errors["collectionName"],
@@ -233,7 +759,7 @@ const CollectionAddModal = ({ dbName, open, onClose, onSuccess }) => {
             setState({ ...state, collectionName: e.target.value });
           }
         }
-      ) }) }) })
+      ) })
     }
   ) });
 };
@@ -283,14 +809,14 @@ const CollectionDeleteModal = ({ open, onClose, onSuccess, dbName, collectionNam
     {
       open,
       danger: true,
-      loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+      loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
       loadingDescription: description,
       modalHeading: "Drop Collection",
       modalLabel: "Collection",
       primaryButtonText: "Yes",
       secondaryButtonText: "No",
-      onRequestClose: onClose,
-      onRequestSubmit: submitDelete,
+      onClose,
+      onPrimaryClick: submitDelete,
       children: [
         /* @__PURE__ */ jsxs("h3", { children: [
           "Are you sure you want to delete the collection ",
@@ -303,11 +829,11 @@ const CollectionDeleteModal = ({ open, onClose, onSuccess, dbName, collectionNam
         ] }),
         /* @__PURE__ */ jsx("div", { className: "mb-4 text-xs", children: "Deleting a collection will delete all documents in the collection and this action cannot be undone" }),
         /* @__PURE__ */ jsx(
-          TextInput,
+          Input,
           {
             id: "name",
-            labelText: "Type the name of the collection to confirm",
             type: "text",
+            labelText: "Type the name of the collection to confirm",
             autoComplete: "new-password",
             required: true,
             placeholder: collectionName,
@@ -332,24 +858,26 @@ const DatabaseAddModal = ({ open, onClose, onSuccess }) => {
   useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
       setDescription("Created!");
-      setStatus("finished");
+      toast({
+        title: "Database Created!",
+        type: "background"
+      });
       setTimeout(() => {
         onSuccess(state.dbName.trim(), state.collectionName.trim());
         onClose();
       }, 2e3);
     } else if (fetcher.data && fetcher.data.status == "error") {
       setDescription(fetcher.data.message || "");
-      setStatus("error");
       setErrors(fetcher.data.errors || {});
-      setTimeout(() => {
-        resetStatus();
-      }, 2e3);
+      toast({
+        title: "Error",
+        description: fetcher.data.message || "An error occurred",
+        type: "background"
+      });
     }
   }, [fetcher.data]);
-  const [status, setStatus] = useState("inactive");
   const [description, setDescription] = useState("Creating...");
   const submit = async () => {
-    setStatus("active");
     fetcher.submit(
       {
         create: state
@@ -361,26 +889,21 @@ const DatabaseAddModal = ({ open, onClose, onSuccess }) => {
       }
     );
   };
-  const resetStatus = () => {
-    setStatus("inactive");
-    setDescription("Creating...");
-  };
   return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx(
     Modal,
     {
       open,
-      onRequestClose: onClose,
-      onRequestSubmit: submit,
-      loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+      onClose,
+      onPrimaryClick: submit,
+      loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
       loadingDescription: description,
-      onLoadingSuccess: resetStatus,
       modalHeading: "Create a new database",
       modalLabel: "Database",
       primaryButtonText: "Create",
       secondaryButtonText: "Cancel",
-      children: /* @__PURE__ */ jsx(Form, { "aria-label": "Database form", autoComplete: "new-password", children: /* @__PURE__ */ jsxs(Stack, { gap: 4, children: [
+      children: /* @__PURE__ */ jsx(Form, { "aria-label": "Database form", autoComplete: "new-password", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-4", children: [
         /* @__PURE__ */ jsx(
-          TextInput,
+          Input,
           {
             id: "name",
             labelText: "Database Name",
@@ -397,14 +920,13 @@ const DatabaseAddModal = ({ open, onClose, onSuccess }) => {
           }
         ),
         /* @__PURE__ */ jsx("hr", {}),
-        /* @__PURE__ */ jsxs(FormGroup, { legendText: "Collection Name", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "collectionName",
               labelText: "Collection Name",
               autoComplete: "new-password",
-              hideLabel: true,
               type: "text",
               required: true,
               invalid: errors["collectionName"],
@@ -416,10 +938,18 @@ const DatabaseAddModal = ({ open, onClose, onSuccess }) => {
               }
             }
           ),
-          /* @__PURE__ */ jsxs("small", { className: "block mt-1", children: [
+          /* @__PURE__ */ jsxs("small", { className: "block mt-4 mb-4 text-sm", children: [
             /* @__PURE__ */ jsx("b", { children: "*" }),
             "MongoDb will only create a database if a collection is added.",
-            /* @__PURE__ */ jsx("a", { className: "text-blue-600 hover:underline", target: "_blank", href: "https://www.mongodb.com/resources/products/fundamentals/create-database", children: "View More" })
+            /* @__PURE__ */ jsx(
+              "a",
+              {
+                className: "ml-2 text-sm text-blue-600 hover:underline",
+                target: "_blank",
+                href: "https://www.mongodb.com/resources/products/fundamentals/create-database",
+                children: "Learn More"
+              }
+            )
           ] })
         ] })
       ] }) })
@@ -428,23 +958,28 @@ const DatabaseAddModal = ({ open, onClose, onSuccess }) => {
 };
 const DatabaseDeleteModal = ({ open, onClose, onSuccess, name }) => {
   const fetcher = useFetcher();
-  const [status, setStatus] = useState("inactive");
   const [description, setDescription] = useState("Deleting...");
   const [confirmName, setConfirmName] = useState("");
   const [errors, setErrors] = useState({});
   useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
       setDescription("Deleted!");
-      setStatus("finished");
+      toast({
+        title: "Database Deleted!",
+        type: "background"
+      });
       setTimeout(() => {
         onSuccess();
         onClose();
       }, 2e3);
     } else if (fetcher.data && fetcher.data.status == "error") {
       setDescription(fetcher.data.message || "");
-      setStatus("error");
+      toast({
+        title: "Error",
+        description: fetcher.data.message || "An error occurred",
+        type: "background"
+      });
       setTimeout(() => {
-        setStatus("inactive");
         setDescription("Deleting...");
       }, 2e3);
     }
@@ -454,7 +989,6 @@ const DatabaseDeleteModal = ({ open, onClose, onSuccess, name }) => {
       setErrors({ name: "The name does not match the database name" });
       return;
     }
-    setStatus("active");
     fetcher.submit(
       {
         delete: { name }
@@ -472,14 +1006,14 @@ const DatabaseDeleteModal = ({ open, onClose, onSuccess, name }) => {
     {
       open,
       danger: true,
-      loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+      loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
       loadingDescription: description,
       modalHeading: "Drop Database",
       modalLabel: "Database",
       primaryButtonText: "Yes",
       secondaryButtonText: "No",
-      onRequestClose: onClose,
-      onRequestSubmit: submitDelete,
+      onClose,
+      onPrimaryClick: submitDelete,
       children: [
         /* @__PURE__ */ jsxs("h3", { children: [
           "Are you sure you want to drop the database ",
@@ -492,7 +1026,7 @@ const DatabaseDeleteModal = ({ open, onClose, onSuccess, name }) => {
         ] }),
         /* @__PURE__ */ jsx("div", { className: "mb-4 text-xs", children: "Dropping a database will delete all collections and documents in the database and this action cannot be undone" }),
         /* @__PURE__ */ jsx(
-          TextInput,
+          Input,
           {
             id: "name",
             labelText: "Type the name of the database to confirm",
@@ -529,7 +1063,7 @@ const Title = ({ title, children, allowCopy = true }) => {
   };
   return /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
     /* @__PURE__ */ jsx("h4", { className: "text-xl font-medium", children }),
-    allowCopy && /* @__PURE__ */ jsx("button", { onClick: handleCopy, className: "ml-2 text-gray-500 hover:text-gray-700", children: copied ? /* @__PURE__ */ jsx(Checkmark, {}) : /* @__PURE__ */ jsx(Copy, {}) })
+    allowCopy && /* @__PURE__ */ jsx("button", { onClick: handleCopy, className: "ml-2 text-gray-500 hover:text-gray-700", children: copied ? /* @__PURE__ */ jsx(CheckIcon, {}) : /* @__PURE__ */ jsx(CopyIcon, {}) })
   ] });
 };
 
@@ -670,7 +1204,7 @@ const isValidCollectionName = function(name) {
 const isUsername = (username) => {
   if (validator.isEmpty(username) || username.length <= 3) {
     return false;
-  } else if (!validator.matches(username, "^[a-zA-Z0-9_.-]*$")) {
+  } else if (!validator.matches(username, "^[a-zA-Z0-9_.-@]*$")) {
     return false;
   }
   return true;
@@ -1173,6 +1707,152 @@ const connect = async (config) => {
   return connectionData;
 };
 
+const Accordion = AccordionPrimitive.Root;
+const AccordionItem = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(AccordionPrimitive.Item, { ref, className: cn("border-b", className), ...props })
+);
+AccordionItem.displayName = "AccordionItem";
+const AccordionTrigger = React.forwardRef(
+  ({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(AccordionPrimitive.Header, { className: "flex", children: /* @__PURE__ */ jsxs(
+    AccordionPrimitive.Trigger,
+    {
+      ref,
+      className: cn(
+        "flex flex-1 items-center justify-between py-4 text-sm font-medium transition-all hover:underline text-left [&[data-state=open]>svg]:rotate-180",
+        className
+      ),
+      ...props,
+      children: [
+        children,
+        /* @__PURE__ */ jsx(ChevronDown$1, { className: "w-4 h-4 transition-transform duration-200 shrink-0 text-muted-foreground" })
+      ]
+    }
+  ) })
+);
+AccordionTrigger.displayName = AccordionPrimitive.Trigger.displayName;
+const AccordionContent = React.forwardRef(
+  ({ className, children, ...props }, ref) => /* @__PURE__ */ jsx(AccordionPrimitive.Content, { ref, className: "overflow-hidden text-sm data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down", ...props, children: /* @__PURE__ */ jsx("div", { className: cn("pb-4 pt-0", className), children }) })
+);
+AccordionContent.displayName = AccordionPrimitive.Content.displayName;
+
+const alertVariants = cva(
+  "relative w-full  border px-4 py-3 text-sm [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground [&>svg~*]:pl-7",
+  {
+    variants: {
+      variant: {
+        default: "bg-background text-foreground",
+        error: "border-error/50 text-error dark:border-error [&>svg]:text-error",
+        success: "border-success/50 text-success-600 dark:border-success-600 [&>svg]:text-success-600",
+        warning: "border-warning/50 text-warning-600 dark:border-warning-600 [&>svg]:text-warning-600",
+        info: "border-info/50 text-info-600 dark:border-info-600 [&>svg]:text-info-600"
+      }
+    },
+    defaultVariants: {
+      variant: "default"
+    }
+  }
+);
+const Alert = React.forwardRef(({ className, variant, ...props }, ref) => /* @__PURE__ */ jsx("div", { ref, role: "alert", className: cn(alertVariants({ variant }), className), ...props }));
+Alert.displayName = "Alert";
+const AlertTitle = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("h5", { ref, className: cn("mb-1 font-medium leading-none tracking-tight", className), ...props }));
+AlertTitle.displayName = "AlertTitle";
+const AlertDescription = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("div", { ref, className: cn("text-sm [&_p]:leading-relaxed", className), ...props }));
+AlertDescription.displayName = "AlertDescription";
+
+const Select = SelectPrimitive.Root;
+const SelectGroup = SelectPrimitive.Group;
+const SelectValue = SelectPrimitive.Value;
+const SelectTrigger = React.forwardRef(
+  ({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+    SelectPrimitive.Trigger,
+    {
+      ref,
+      className: cn(
+        "flex h-9 w-full cursor-pointer items-center justify-between whitespace-nowrap  border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+        className
+      ),
+      ...props,
+      children: [
+        children,
+        /* @__PURE__ */ jsx(SelectPrimitive.Icon, { asChild: true, children: /* @__PURE__ */ jsx(ChevronDown$1, { className: "w-4 h-4 opacity-50" }) })
+      ]
+    }
+  )
+);
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
+const SelectScrollUpButton = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.ScrollUpButton, { ref, className: cn("flex cursor-default items-center justify-center py-1", className), ...props, children: /* @__PURE__ */ jsx(ChevronUp$1, { className: "w-4 h-4" }) })
+);
+SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName;
+const SelectScrollDownButton = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.ScrollDownButton, { ref, className: cn("flex cursor-default items-center justify-center py-1", className), ...props, children: /* @__PURE__ */ jsx(ChevronDown$1, { className: "w-4 h-4" }) })
+);
+SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayName;
+const SelectContent = React.forwardRef(
+  ({ className, children, position = "popper", ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Portal, { children: /* @__PURE__ */ jsxs(
+    SelectPrimitive.Content,
+    {
+      ref,
+      className: cn(
+        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden  border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+        className
+      ),
+      position,
+      ...props,
+      children: [
+        /* @__PURE__ */ jsx(SelectScrollUpButton, {}),
+        /* @__PURE__ */ jsx(SelectPrimitive.Viewport, { className: cn("p-1", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"), children }),
+        /* @__PURE__ */ jsx(SelectScrollDownButton, {})
+      ]
+    }
+  ) })
+);
+SelectContent.displayName = SelectPrimitive.Content.displayName;
+const SelectLabel = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Label, { ref, className: cn("px-2 py-1.5 text-sm font-semibold", className), ...props })
+);
+SelectLabel.displayName = SelectPrimitive.Label.displayName;
+const SelectItem = React.forwardRef(
+  ({ className, children, ...props }, ref) => /* @__PURE__ */ jsxs(
+    SelectPrimitive.Item,
+    {
+      ref,
+      className: cn(
+        "relative flex w-full cursor-pointer select-none items-center  py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        className
+      ),
+      ...props,
+      children: [
+        /* @__PURE__ */ jsx("span", { className: "absolute right-2 flex h-3.5 w-3.5 items-center justify-center", children: /* @__PURE__ */ jsx(SelectPrimitive.ItemIndicator, { children: /* @__PURE__ */ jsx(Check, { className: "w-4 h-4" }) }) }),
+        /* @__PURE__ */ jsx(SelectPrimitive.ItemText, { children })
+      ]
+    }
+  )
+);
+SelectItem.displayName = SelectPrimitive.Item.displayName;
+const SelectSeparator = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(SelectPrimitive.Separator, { ref, className: cn("-mx-1 my-1 h-px bg-muted", className), ...props })
+);
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
+
+const Table = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("div", { className: "relative w-full overflow-auto", children: /* @__PURE__ */ jsx("table", { ref, className: cn("w-full caption-bottom", className), ...props }) }));
+Table.displayName = "Table";
+const TableHeader = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("thead", { ref, className: cn("", className), ...props }));
+TableHeader.displayName = "TableHeader";
+const TableBody = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("tbody", { ref, className: cn("", className), ...props }));
+TableBody.displayName = "TableBody";
+const TableFooter = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("tfoot", { ref, className: cn("border-t bg-muted/50 font-medium", className), ...props }));
+TableFooter.displayName = "TableFooter";
+const TableRow = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("tr", { ref, className: cn("border-b transition-colors hover:bg-muted/50", className), ...props }));
+TableRow.displayName = "TableRow";
+const TableHead = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("th", { ref, className: cn("h-10 px-2 text-left align-middle font-medium text-muted-foreground", className), ...props }));
+TableHead.displayName = "TableHead";
+const TableCell = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("td", { ref, className: cn("px-4 py-2 align-middle", className), ...props }));
+TableCell.displayName = "TableCell";
+const TableCaption = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("caption", { ref, className: cn("mt-4 text-sm text-muted-foreground", className), ...props }));
+TableCaption.displayName = "TableCaption";
+
 let userDb;
 if (process.env.NODE_ENV === "production") {
   userDb = new PrismaClient();
@@ -1379,6 +2059,15 @@ const action$7 = async ({ request, params }) => {
     return Response.json({ status: "error", message: e.message }, { status: 500 });
   }
 };
+var sortingSelect$1 = /* @__PURE__ */ ((sortingSelect2) => {
+  sortingSelect2["name"] = "Name";
+  sortingSelect2["documents"] = "Documents";
+  sortingSelect2["document-size"] = "Avg. Document Size";
+  sortingSelect2["storage-size"] = "Storage Size";
+  sortingSelect2["indexes"] = "Indexes";
+  sortingSelect2["index-size"] = "Total Index Size";
+  return sortingSelect2;
+})(sortingSelect$1 || {});
 function DatabasePage$1() {
   const loaderData = useLoaderData();
   const [sort, setSort] = useState("");
@@ -1390,7 +2079,10 @@ function DatabasePage$1() {
   const [collectionDelete, setCollectionDelete] = useState(null);
   const stats = loaderData?.stats;
   if (loaderData?.error) {
-    return /* @__PURE__ */ jsx(InlineNotification, { title: "Error", subtitle: loaderData.error, hideCloseButton: true });
+    return /* @__PURE__ */ jsxs(Alert, { children: [
+      /* @__PURE__ */ jsx(AlertTitle, { children: "An error occurred while fetching the collection stats." }),
+      /* @__PURE__ */ jsx(AlertDescription, { children: loaderData.error })
+    ] });
   }
   if (!stats) {
     return /* @__PURE__ */ jsx("div", { children: "Loading..." });
@@ -1449,154 +2141,148 @@ function DatabasePage$1() {
       break;
   }
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs(Grid, { className: "database-page", fullWidth: true, children: [
-      /* @__PURE__ */ jsxs(Column, { lg: 16, md: 8, sm: 4, children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 pb-4 lg:flex-nowrap", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsxs(Title, { title: stats.name, children: [
-              /* @__PURE__ */ jsx("span", { className: "font-normal opacity-50", children: "Database:" }),
-              " ",
-              stats.name
-            ] }),
-            /* @__PURE__ */ jsxs("p", { className: "mb-4 text-sm", children: [
-              "Collections: ",
-              stats.collections,
-              ", Documents: ",
-              totalDocuments
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
-              /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: "tertiary",
-                  renderIcon: Add,
-                  iconDescription: "Create Collection",
-                  onClick: (e) => {
-                    e.preventDefault();
-                    setIsAdd(true);
-                  },
-                  children: "Create Collection"
-                }
-              ),
-              /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  kind: "danger--tertiary",
-                  renderIcon: TrashCan,
-                  iconDescription: "Delete Database",
-                  onClick: (e) => {
-                    e.preventDefault();
-                    setIsDelete(true);
-                  },
-                  children: "Drop Database"
-                }
-              )
-            ] })
+    /* @__PURE__ */ jsxs("div", { className: "database-page", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 pb-4 lg:flex-nowrap", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsxs(Title, { title: stats.name, children: [
+            /* @__PURE__ */ jsx("span", { className: "font-normal opacity-50", children: "Database:" }),
+            " ",
+            stats.name
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-end gap-2", children: [
+          /* @__PURE__ */ jsxs("p", { className: "mb-4 text-sm", children: [
+            "Collections: ",
+            stats.collections,
+            ", Documents: ",
+            totalDocuments
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
             /* @__PURE__ */ jsx(
-              Search,
+              Button,
               {
-                placeholder: "Find a collection",
-                labelText: "Search",
-                closeButtonLabelText: "Clear search input",
-                id: "search-collection",
-                onChange: (e) => {
-                  setSearch(e.target.value);
-                }
-              }
-            ),
-            /* @__PURE__ */ jsx("span", { className: "text-sm", children: "Sort:" }),
-            /* @__PURE__ */ jsxs(
-              Select,
-              {
-                hideLabel: true,
-                id: "sort",
-                onChange: (e) => {
-                  setSort(e.target.value);
+                size: "sm",
+                variant: "outline",
+                iconPosition: "right",
+                icon: /* @__PURE__ */ jsx(PlusIcon, {}),
+                onClick: (e) => {
+                  e.preventDefault();
+                  setIsAdd(true);
                 },
-                children: [
-                  /* @__PURE__ */ jsx(SelectItem, { value: "", text: "---" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "name", text: "By Name" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "documents", text: "By Documents" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "document-size", text: "By Avg. Document Size" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "storage-size", text: "By Storage Size" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "indexes", text: "By Indexes" }),
-                  /* @__PURE__ */ jsx(SelectItem, { value: "index-size", text: "By Total Index Size" })
-                ]
+                children: "Create Collection"
               }
             ),
             /* @__PURE__ */ jsx(
               Button,
               {
-                hasIconOnly: true,
-                size: "md",
-                kind: "ghost",
-                renderIcon: direction == "asc" ? SortAscending : SortDescending,
-                iconDescription: "Sort Direction",
+                size: "sm",
+                variant: "error",
+                icon: /* @__PURE__ */ jsx(TrashIcon, {}),
                 onClick: (e) => {
                   e.preventDefault();
-                  setDirection(direction == "asc" ? "desc" : "asc");
-                }
+                  setIsDelete(true);
+                },
+                children: "Drop Database"
               }
             )
           ] })
         ] }),
-        stats.collectionList.map((collection, index) => {
-          if (search && search.trim() != "" && !(collection.name.toLowerCase().indexOf(search.toLowerCase()) == 0)) {
-            return null;
-          }
-          const avgDocumentSize = collection.stats.storageStats?.storageSize / collection.count;
-          return /* @__PURE__ */ jsxs("div", { className: "mb-3 bg-neutral-100", children: [
-            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-base border-b border-solid border-neutral-200", children: [
-              /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-1", children: [
-                /* @__PURE__ */ jsx(DataTable, {}),
-                " ",
-                /* @__PURE__ */ jsx("strong", { children: collection.name })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
-                /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    kind: "danger--tertiary",
-                    renderIcon: TrashCan,
-                    size: "sm",
-                    onClick: (e) => {
-                      e.preventDefault();
-                      setCollectionDelete(collection.name);
-                    },
-                    children: "Delete"
-                  }
-                ),
-                /* @__PURE__ */ jsx(Button, { kind: "tertiary", renderIcon: ArrowRight, size: "sm", href: `/database/${stats.name}/${collection.name}`, children: "View" })
-              ] })
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-end gap-2", children: [
+          /* @__PURE__ */ jsx(
+            SearchInput,
+            {
+              placeholder: "Find a collection",
+              id: "search-collection",
+              value: search,
+              className: "w-32 min-w-md bg-neutral-100",
+              onChange: (value) => {
+                setSearch(value);
+              }
+            }
+          ),
+          /* @__PURE__ */ jsx("span", { className: "text-sm", children: "Sort:" }),
+          /* @__PURE__ */ jsxs(
+            Select,
+            {
+              onValueChange: (value) => {
+                setSort(value);
+              },
+              children: [
+                /* @__PURE__ */ jsx(SelectTrigger, { children: /* @__PURE__ */ jsx("span", { className: "text-sm", children: sort == "" ? "---" : sortingSelect$1[sort] }) }),
+                /* @__PURE__ */ jsx(SelectContent, { className: "bg-white", children: Object.keys(sortingSelect$1).map((key) => {
+                  return /* @__PURE__ */ jsx(SelectItem, { value: key, children: sortingSelect$1[key] }, key);
+                }) })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            Button,
+            {
+              hasIconOnly: true,
+              variant: "ghost",
+              tooltip: "Sort Direction",
+              icon: direction == "asc" ? /* @__PURE__ */ jsx(SortAscIcon, {}) : /* @__PURE__ */ jsx(SortDescIcon, {}),
+              onClick: (e) => {
+                e.preventDefault();
+                setDirection(direction == "asc" ? "desc" : "asc");
+              }
+            }
+          )
+        ] })
+      ] }),
+      stats.collectionList.map((collection, index) => {
+        if (search && search.trim() != "" && !(collection.name.toLowerCase().indexOf(search.toLowerCase()) == 0)) {
+          return null;
+        }
+        const avgDocumentSize = collection.stats.storageStats?.storageSize / collection.count;
+        return /* @__PURE__ */ jsxs("div", { className: "mb-3 bg-neutral-100", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-base border-b border-solid border-neutral-200", children: [
+            /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-1", children: [
+              /* @__PURE__ */ jsx(DatabaseIcon, {}),
+              " ",
+              /* @__PURE__ */ jsx("strong", { children: collection.name })
             ] }),
-            /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2 px-4 py-2 lg:grid-cols-5", children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
-                /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Storage size:" }),
-                /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(collection.stats.storageStats?.storageSize) })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
-                /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Documents:" }),
-                /* @__PURE__ */ jsx("span", { className: "font-normal", children: collection.count })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
-                /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Avg. document size:" }),
-                /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(avgDocumentSize) })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
-                /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Indexes:" }),
-                /* @__PURE__ */ jsx("span", { className: "font-normal", children: collection.indexes.length })
-              ] }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
-                /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Total index size:" }),
-                /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(collection.stats.storageStats?.totalIndexSize) })
-              ] })
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+              /* @__PURE__ */ jsx(
+                Button,
+                {
+                  variant: "error",
+                  icon: /* @__PURE__ */ jsx(TrashIcon, {}),
+                  size: "sm",
+                  onClick: (e) => {
+                    e.preventDefault();
+                    setCollectionDelete(collection.name);
+                  },
+                  children: "Delete"
+                }
+              ),
+              /* @__PURE__ */ jsx(Button, { variant: "outline", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), size: "sm", href: `/database/${stats.name}/${collection.name}`, children: "View" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-2 px-4 py-2 lg:grid-cols-5", children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
+              /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Storage size:" }),
+              /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(collection.stats.storageStats?.storageSize) })
             ] }),
-            /* @__PURE__ */ jsx(Accordion, { children: /* @__PURE__ */ jsx(AccordionItem, { title: "More Details", className: "pr-0 ", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-start w-full pb-4 lg:flex-row", children: [
-              /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { children: /* @__PURE__ */ jsxs(TableBody, { children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
+              /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Documents:" }),
+              /* @__PURE__ */ jsx("span", { className: "font-normal", children: collection.count })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
+              /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Avg. document size:" }),
+              /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(avgDocumentSize) })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
+              /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Indexes:" }),
+              /* @__PURE__ */ jsx("span", { className: "font-normal", children: collection.indexes.length })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col text-sm", children: [
+              /* @__PURE__ */ jsx("span", { className: "block mb-1 font-bold", children: "Total index size:" }),
+              /* @__PURE__ */ jsx("span", { className: "font-normal", children: convertBytes(collection.stats.storageStats?.totalIndexSize) })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx(Accordion, { type: "multiple", children: /* @__PURE__ */ jsxs(AccordionItem, { value: "stats", title: "More Details", className: "pr-0 ", children: [
+            /* @__PURE__ */ jsx(AccordionTrigger, { className: "px-4 border-t border-solid border-neutral-200", children: /* @__PURE__ */ jsx("span", { className: "font-medium", children: "More Details" }) }),
+            /* @__PURE__ */ jsx(AccordionContent, { className: "px-0", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-start w-full pb-4 lg:flex-row", children: [
+              /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
                 /* @__PURE__ */ jsxs(TableRow, { children: [
                   /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Namespace" }),
                   /* @__PURE__ */ jsx(TableCell, { children: collection.stats.ns })
@@ -1638,7 +2324,7 @@ function DatabasePage$1() {
                   ] })
                 ] })
               ] }) }) }),
-              /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "mt-4 lg:mt-0", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+              /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "mt-4 text-md lg:mt-0", children: /* @__PURE__ */ jsxs(TableBody, { children: [
                 /* @__PURE__ */ jsxs(TableRow, { children: [
                   /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Storage Size" }),
                   /* @__PURE__ */ jsxs(TableCell, { children: [
@@ -1673,84 +2359,82 @@ function DatabasePage$1() {
                   /* @__PURE__ */ jsx(TableCell, { children: numberWithCommas(collection.stats.queryExecStats?.collectionScans.nonTailable) })
                 ] })
               ] }) }) })
-            ] }) }) })
-          ] }, index);
-        })
-      ] }),
-      /* @__PURE__ */ jsxs(Column, { lg: 16, md: 8, sm: 4, className: "pb-10", children: [
-        /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between pb-4 mt-10", children: /* @__PURE__ */ jsxs("div", { className: "", children: [
-          /* @__PURE__ */ jsx("h4", { className: "text-xl font-medium", children: "Details" }),
-          /* @__PURE__ */ jsxs("p", { className: "text-sm", children: [
-            "Collections: ",
-            stats.collections
-          ] })
-        ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, children: /* @__PURE__ */ jsxs(TableBody, { children: [
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              /* @__PURE__ */ jsx("strong", { children: "Collections " }),
-              /* @__PURE__ */ jsx("small", { className: "block", children: "(incl. system.namespaces)" })
-            ] }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.collections })
+            ] }) })
+          ] }) })
+        ] }, index);
+      }),
+      /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between pb-4 mt-10", children: /* @__PURE__ */ jsxs("div", { className: "", children: [
+        /* @__PURE__ */ jsx("h4", { className: "text-xl font-medium", children: "Details" }),
+        /* @__PURE__ */ jsxs("p", { className: "text-sm", children: [
+          "Collections: ",
+          stats.collections
+        ] })
+      ] }) }),
+      /* @__PURE__ */ jsx(Table, { className: "text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsxs(TableCell, { children: [
+            /* @__PURE__ */ jsx("strong", { children: "Collections " }),
+            /* @__PURE__ */ jsx("small", { className: "block", children: "(incl. system.namespaces)" })
           ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Data Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.dataSize })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Storage Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.storageSize })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Views" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.views })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Avg Obj Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.avgObjSize })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Objects" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.objects })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Operation Time" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.operationTime })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Cluster Time" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.clusterTime })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Extents" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.numExtents })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Extents Free List" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.extentFreeListNum })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Indexes" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.indexes })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Index Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.indexSize })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Data File Version" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.dataFileVersion })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "File System Used Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: convertBytes(stats.fsUsedSize) })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "File System Total Size" }) }),
-            /* @__PURE__ */ jsx(TableCell, { children: convertBytes(stats.fsTotalSize) })
-          ] })
-        ] }) })
-      ] })
+          /* @__PURE__ */ jsx(TableCell, { children: stats.collections })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Data Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.dataSize })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Storage Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.storageSize })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Views" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.views })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Avg Obj Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.avgObjSize })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Objects" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.objects })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Operation Time" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.operationTime })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Cluster Time" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.clusterTime })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Extents" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.numExtents })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Extents Free List" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.extentFreeListNum })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Indexes" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.indexes })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Index Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.indexSize })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "Data File Version" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: stats.dataFileVersion })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "File System Used Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: convertBytes(stats.fsUsedSize) })
+        ] }),
+        /* @__PURE__ */ jsxs(TableRow, { children: [
+          /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsx("strong", { children: "File System Total Size" }) }),
+          /* @__PURE__ */ jsx(TableCell, { children: convertBytes(stats.fsTotalSize) })
+        ] })
+      ] }) })
     ] }),
     /* @__PURE__ */ jsx(
       CollectionAddModal,
@@ -1817,7 +2501,7 @@ const CopyText = ({ text, className }) => {
       }, 1e3);
     });
   };
-  return /* @__PURE__ */ jsx("span", { className: "cursor-pointer" + (className ? " " + className : ""), onClick: handleCopy, children: copied ? /* @__PURE__ */ jsx(Checkmark, {}) : /* @__PURE__ */ jsx(Copy, {}) });
+  return /* @__PURE__ */ jsx("span", { className: "cursor-pointer" + (className ? " " + className : ""), onClick: handleCopy, children: copied ? /* @__PURE__ */ jsx(CheckIcon, {}) : /* @__PURE__ */ jsx(CopyIcon, {}) });
 };
 const CopyTextButton = ({ text, children, ...rest }) => {
   const [copied, setCopied] = useState(false);
@@ -1833,7 +2517,7 @@ const CopyTextButton = ({ text, children, ...rest }) => {
       }, 1e3);
     });
   };
-  return /* @__PURE__ */ jsx(Button, { renderIcon: copied ? Checkmark : Copy, onClick: handleCopy, ...rest, children });
+  return /* @__PURE__ */ jsx(Button, { icon: copied ? /* @__PURE__ */ jsx(CheckIcon, {}) : /* @__PURE__ */ jsx(CopyIcon, {}), onClick: handleCopy, ...rest, children });
 };
 
 function getInputSelection(el) {
@@ -2281,7 +2965,7 @@ const AutocompleteTextField = ({
 const IconButton = ({ children, ...props }) => {
   return /* @__PURE__ */ jsx("button", { ...props, className: "px-1 py-1 hover:bg-neutral-200" + (props.className ? " " + props.className : ""), children });
 };
-const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate, onDelete, onAdd }) => {
+const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate, onDelete, onAdd }) => {
   const [isExpanded, setIsExpanded] = useState(expanded);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -2330,7 +3014,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
         /* @__PURE__ */ jsx(
           AutocompleteTextField,
           {
-            className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid rounded-sm border-neutral-300",
+            className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300",
             trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
             options: mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems),
             attributes: { placeholder: "Value (JSON or String or Number ...)", style: { resize: "both", ...style } },
@@ -2339,8 +3023,8 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
             onChange: (value) => setEditValue(value)
           }
         ),
-        /* @__PURE__ */ jsx(IconButton, { onClick: handleSave, className: "", children: /* @__PURE__ */ jsx(Checkmark, { className: "w-4 h-4" }) }),
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsEditing(false), className: "", children: /* @__PURE__ */ jsx(Close, { className: "w-4 h-4" }) })
+        /* @__PURE__ */ jsx(IconButton, { onClick: handleSave, className: "", children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-4 h-4" }) }),
+        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsEditing(false), className: "", children: /* @__PURE__ */ jsx(XIcon, { className: "w-4 h-4" }) })
       ] });
     }
     if (typeof data !== "object" || data === null || data instanceof ObjectId || data instanceof Date) {
@@ -2377,7 +3061,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
       /* @__PURE__ */ jsx(
         AutocompleteTextField,
         {
-          className: "w-32 h-6 px-1 text-xs font-medium border border-solid rounded-sm border-neutral-300",
+          className: "w-32 h-6 px-1 text-xs font-medium border border-solid  border-neutral-300",
           trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
           options: mongodbOperators.concat(autocompleteItems),
           attributes: { placeholder: "Key" },
@@ -2390,7 +3074,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
       /* @__PURE__ */ jsx(
         AutocompleteTextField,
         {
-          className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid rounded-sm border-neutral-300",
+          className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300",
           trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
           options: mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems),
           attributes: { placeholder: "Value (JSON or String or Number ...)", style: { resize: "both" } },
@@ -2399,7 +3083,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
           onChange: (value) => setNewValue(value)
         }
       ),
-      /* @__PURE__ */ jsx(IconButton, { onClick: handleAdd, disabled: !newKey.trim(), children: /* @__PURE__ */ jsx(Checkmark, { className: "w-4 h-4" }) }),
+      /* @__PURE__ */ jsx(IconButton, { onClick: handleAdd, disabled: !newKey.trim(), children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-4 h-4" }) }),
       /* @__PURE__ */ jsx(
         IconButton,
         {
@@ -2408,7 +3092,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
             setNewValue(() => "");
             setIsAddingNew(false);
           },
-          children: /* @__PURE__ */ jsx(Close, { className: "w-4 h-4" })
+          children: /* @__PURE__ */ jsx(XIcon, { className: "w-4 h-4" })
         }
       )
     ] });
@@ -2423,8 +3107,8 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
       renderValue(),
       /* @__PURE__ */ jsxs("div", { className: "flex items-center h-5 gap-1 ml-10 opacity-0 group-hover:opacity-100 left-full", children: [
         !isEditing && allowEdit && /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsx(IconButton, { onClick: handleEdit, title: "Edit", children: /* @__PURE__ */ jsx(Edit, { className: "w-4 h-4" }) }),
-          /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "px-1 py-1 text-red-600 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(TrashCan, { className: "w-4 h-4" }) })
+          /* @__PURE__ */ jsx(IconButton, { onClick: handleEdit, title: "Edit", children: /* @__PURE__ */ jsx(PencilIcon, { className: "w-4 h-4" }) }),
+          /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "px-1 py-1 text-red-600 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-4 h-4" }) })
         ] }),
         /* @__PURE__ */ jsx(IconButton, { className: "px-1 py-1 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(CopyText, { text: EJSON.stringify(data) }) })
       ] })
@@ -2440,7 +3124,7 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
   }
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { className: "relative flex items-center gap-1 py-0.5 text-sm group" + (isRoot ? " mb-1" : ""), children: [
-      /* @__PURE__ */ jsx("button", { onClick: handleToggle, className: "w-4 h-4", children: isExpanded ? /* @__PURE__ */ jsx(ChevronDown, { className: "w-4 h-4" }) : /* @__PURE__ */ jsx(ChevronRight, { className: "w-4 h-4" }) }),
+      /* @__PURE__ */ jsx("button", { onClick: handleToggle, className: "w-4 h-4", children: isExpanded ? /* @__PURE__ */ jsx(ChevronDownIcon, { className: "w-4 h-4" }) : /* @__PURE__ */ jsx(ChevronRightIcon, { className: "w-4 h-4" }) }),
       /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-1", children: [
         /* @__PURE__ */ jsx("span", { className: "flex font-medium", children: label }),
         /* @__PURE__ */ jsxs("span", { className: "text-xs text-neutral-400 whitespace-nowrap", children: [
@@ -2451,13 +3135,13 @@ const TreeNode = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate
         ] })
       ] }),
       !isEditing && allowEdit && /* @__PURE__ */ jsxs("div", { className: "flex items-center h-5 gap-1 ml-10 opacity-0 group-hover:opacity-100 left-full", children: [
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsAddingNew(true), children: /* @__PURE__ */ jsx(Add, { className: "w-4 h-4" }) }),
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "text-red-600", children: /* @__PURE__ */ jsx(TrashCan, { className: "w-4 h-4" }) })
+        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsAddingNew(true), children: /* @__PURE__ */ jsx(PlusIcon, { className: "w-4 h-4" }) }),
+        /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "text-red-600", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-4 h-4" }) })
       ] })
     ] }),
     allowEdit && renderAddNew(),
     isExpanded && /* @__PURE__ */ jsx("div", { className: "ml-4", children: Object.entries(data).map(([key, value]) => /* @__PURE__ */ jsx(
-      TreeNode,
+      TreeNode$1,
       {
         autocompleteItems,
         allowEdit,
@@ -2513,7 +3197,7 @@ const JsonTreeEditor = ({ autocompleteItems, isExpanded, allowEdit = true, data 
     onChange?.(newData);
   };
   return /* @__PURE__ */ jsx(
-    TreeNode,
+    TreeNode$1,
     {
       autocompleteItems,
       allowEdit: !!(onChange && allowEdit),
@@ -2536,27 +3220,27 @@ const CsvTable = ({ sort, rows, allowEdit = false, onSort }) => {
       });
     });
   }
-  return /* @__PURE__ */ jsxs(Table, { isSortable: true, size: "md", useZebraStyles: false, children: [
-    /* @__PURE__ */ jsx(TableHead, { children: /* @__PURE__ */ jsx(TableRow, { children: headers.map((header, index) => {
+  return /* @__PURE__ */ jsx("div", { className: "w-full max-w-full overflow-auto", children: /* @__PURE__ */ jsxs("table", { border: 1, className: "bg-neutral-50", children: [
+    /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: headers.map((header, index) => {
       return /* @__PURE__ */ jsx(
-        TableHeader,
+        "th",
         {
-          className: "bg-neutral-200",
-          sortDirection: sort.field == header ? sort.direction > 0 ? "ASC" : "DESC" : "NONE",
-          isSortHeader: sort.field == header,
-          isSortable: true,
+          className: "px-4 py-2 text-left cursor-pointer text-md bg-neutral-100 group",
           onClick: () => {
             onSort(header);
           },
           id: `${header}-${index}`,
-          children: header
+          children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-2", children: [
+            header,
+            /* @__PURE__ */ jsx("span", { className: sort.field == header ? "opacity-60 group-hover:opacity-100" : " opacity-0 group-hover:opacity-40", children: sort.field == header && sort.direction > 0 ? /* @__PURE__ */ jsx(SortAscIcon, {}) : /* @__PURE__ */ jsx(SortDescIcon, {}) })
+          ] })
         },
         header
       );
     }) }) }),
-    /* @__PURE__ */ jsx(TableBody, { children: rows.map((row) => /* @__PURE__ */ jsx(TableRow, { children: Object.keys(row).map((key) => {
+    /* @__PURE__ */ jsx("tbody", { children: rows.map((row, rowIndex) => /* @__PURE__ */ jsx("tr", { className: "opacity-80 hover:opacity-100 border-b " + (rowIndex % 2 == 0 ? "bg-white" : ""), children: Object.keys(row).map((key) => {
       if ((Array.isArray(row[key]) || row[key] instanceof Object) && !(row[key] instanceof ObjectId || row[key] instanceof Date)) {
-        return /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-2 group/item", children: [
+        return /* @__PURE__ */ jsx("td", { className: "px-4 py-2", children: /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-2 group/item", children: [
           /* @__PURE__ */ jsx(JsonTreeEditor, { autocompleteItems: [], allowEdit, data: row[key] }),
           /* @__PURE__ */ jsx(CopyText, { className: "p-1 ml-auto opacity-0 group-hover/item:opacity-100 hover:bg-white", text: EJSON.stringify(row[key]) })
         ] }) }, key);
@@ -2569,23 +3253,254 @@ const CsvTable = ({ sort, rows, allowEdit = false, onSort }) => {
       } else {
         output = EJSON.stringify(row[key]);
       }
-      return /* @__PURE__ */ jsx(TableCell, { children: /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 px-1 group hover:bg-white", children: [
+      return /* @__PURE__ */ jsx("td", { className: "px-4 py-2", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 px-1 text-md group hover:bg-white", children: [
         EJSON.stringify(row[key]),
         /* @__PURE__ */ jsx(CopyText, { className: "p-1 ml-auto opacity-0 group-hover:opacity-100 hover:bg-neutral-200", text: output })
       ] }) }, key);
     }) }, row._id)) })
-  ] });
+  ] }) });
 };
 
 const AlertMessage = ({ message, type = "error", onClose }) => {
   if (!message || message.trim() == "") {
     return null;
   }
-  return /* @__PURE__ */ jsx("div", { className: "w-full", children: /* @__PURE__ */ jsxs("div", { className: "inline-flex items-center px-2 py-1 text-xs text-red-500 bg-red-100 border border-red-300 border-solid rounded-sm", children: [
+  return /* @__PURE__ */ jsx("div", { className: "w-full", children: /* @__PURE__ */ jsxs("div", { className: "inline-flex items-center px-2 py-1 text-xs text-red-500 bg-red-100 border border-red-300 border-solid ", children: [
     message,
-    /* @__PURE__ */ jsx("button", { className: "ml-2 text-xs text-red-500 rounded-sm hover:bg-red-200", onClick: onClose, children: /* @__PURE__ */ jsx(Close, {}) })
+    /* @__PURE__ */ jsx("button", { className: "ml-2 text-xs text-red-500  hover:bg-red-200", onClick: onClose, children: /* @__PURE__ */ jsx(XIcon, {}) })
   ] }) });
 };
+
+const Tabs = TabsPrimitive.Root;
+const TabsList = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(TabsPrimitive.List, { ref, className: cn("inline-flex h-9 items-center justify-center  bg-muted p-1 text-muted-foreground", className), ...props }));
+TabsList.displayName = TabsPrimitive.List.displayName;
+const TabsTrigger = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    TabsPrimitive.Trigger,
+    {
+      ref,
+      className: cn(
+        "inline-flex items-center justify-center whitespace-nowrap  px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+        className
+      ),
+      ...props
+    }
+  )
+);
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
+const TabsContent = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    TabsPrimitive.Content,
+    {
+      ref,
+      className: cn("mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", className),
+      ...props
+    }
+  )
+);
+TabsContent.displayName = TabsPrimitive.Content.displayName;
+
+function mapPageSizesToObject(sizes) {
+  return typeof sizes[0] === "object" && sizes[0] !== null ? sizes : sizes.map((size) => ({ text: size, value: size }));
+}
+function renderSelectItems(total) {
+  let counter = 1;
+  const itemArr = [];
+  while (counter <= total) {
+    itemArr.push(
+      /* @__PURE__ */ jsx(SelectItem, { value: counter, children: String(counter) }, counter)
+    );
+    counter++;
+  }
+  return itemArr;
+}
+function getPageSize(pageSizes, pageSize) {
+  if (pageSize) {
+    const hasSize = pageSizes.find((size) => {
+      return pageSize === size.value;
+    });
+    if (hasSize) {
+      return pageSize;
+    }
+  }
+  return pageSizes[0].value;
+}
+const Pagination = React__default.forwardRef(function Pagination2({
+  backwardText = "Previous page",
+  className: customClassName = "",
+  disabled = false,
+  forwardText = "Next page",
+  id,
+  isLastPage = false,
+  itemText = (min, max) => `${min}–${max} items`,
+  itemRangeText = (min, max, total) => `${min}–${max} of ${total} items`,
+  itemsPerPageText = "Items per page:",
+  onChange,
+  pageNumberText: _pageNumberText = "Page Number",
+  pageRangeText = (_current, total) => `of ${total} ${total === 1 ? "page" : "pages"}`,
+  page: controlledPage = 1,
+  pageInputDisabled,
+  pageSize: controlledPageSize,
+  pageSizeInputDisabled,
+  pageSizes: controlledPageSizes,
+  pageText = (page) => `page ${page}`,
+  pagesUnknown = false,
+  size = "md",
+  totalItems,
+  ...rest
+}, ref) {
+  const backBtnRef = useRef(null);
+  const forwardBtnRef = useRef(null);
+  const [pageSizes, setPageSizes] = useState(() => {
+    return mapPageSizesToObject(controlledPageSizes);
+  });
+  const [prevPageSizes, setPrevPageSizes] = useState(controlledPageSizes);
+  const [page, setPage] = useState(controlledPage);
+  const [prevControlledPage, setPrevControlledPage] = useState(controlledPage);
+  const [pageSize, setPageSize] = useState(() => {
+    return getPageSize(pageSizes, controlledPageSize);
+  });
+  const [prevControlledPageSize, setPrevControlledPageSize] = useState(controlledPageSize);
+  const className = cn("pagination bg-neutral-100 border-t border-solid border-neutral-300 flex items-center text-md justify-between", `pagination--${size}`, customClassName);
+  const totalPages = totalItems ? Math.max(Math.ceil(totalItems / pageSize), 1) : 1;
+  const backButtonDisabled = disabled || page === 1;
+  const backButtonClasses = cn("flex p-1 w-10 items-center justify-center cursor-pointer hover:bg-neutral-100", backButtonDisabled ? "opacity-50 cursor-not-allowed" : "");
+  const forwardButtonDisabled = disabled || page === totalPages && !pagesUnknown;
+  const forwardButtonClasses = cn(
+    "flex p-1 items-center w-10 justify-center cursor-pointer hover:bg-neutral-100",
+    forwardButtonDisabled || isLastPage ? "opacity-50 cursor-not-allowed" : ""
+  );
+  const selectItems = renderSelectItems(totalPages);
+  if (controlledPage !== prevControlledPage) {
+    setPage(controlledPage);
+    setPrevControlledPage(controlledPage);
+  }
+  if (controlledPageSize !== prevControlledPageSize) {
+    setPageSize(getPageSize(pageSizes, controlledPageSize));
+    setPrevControlledPageSize(controlledPageSize);
+  }
+  if (!isArraysEqual(controlledPageSizes, prevPageSizes)) {
+    const pageSizes2 = mapPageSizesToObject(controlledPageSizes);
+    const hasPageSize = pageSizes2.find((size2) => {
+      return size2.value === pageSize;
+    });
+    if (!hasPageSize) {
+      setPage(1);
+    }
+    setPageSizes(pageSizes2);
+    setPrevPageSizes(controlledPageSizes);
+  }
+  function handleSizeChange(value) {
+    const pageSize2 = Number(value);
+    const changes = {
+      pageSize: pageSize2,
+      page: 1
+    };
+    setPage(changes.page);
+    setPageSize(changes.pageSize);
+    if (onChange) {
+      onChange(changes);
+    }
+  }
+  function handlePageInputChange(value) {
+    const page2 = Number(value);
+    if (page2 > 0 && totalItems && page2 <= Math.max(Math.ceil(totalItems / pageSize), 1)) {
+      setPage(page2);
+      if (onChange) {
+        onChange({
+          page: page2,
+          pageSize
+        });
+      }
+    }
+  }
+  function incrementPage() {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    if (nextPage === totalPages && backBtnRef?.current) {
+      backBtnRef.current.focus();
+    }
+    if (onChange) {
+      onChange({
+        page: nextPage,
+        pageSize,
+        ref: backBtnRef
+      });
+    }
+  }
+  function decrementPage() {
+    const nextPage = page - 1;
+    setPage(nextPage);
+    if (nextPage === 1 && forwardBtnRef?.current) {
+      forwardBtnRef.current.focus();
+    }
+    if (onChange) {
+      onChange({
+        page: nextPage,
+        pageSize,
+        ref: forwardBtnRef
+      });
+    }
+  }
+  return /* @__PURE__ */ jsxs("div", { className, ref, ...rest, children: [
+    /* @__PURE__ */ jsxs("div", { className: `flex gap-2 pl-4`, children: [
+      /* @__PURE__ */ jsx("label", { className: `whitespace-nowrap flex items-center`, children: itemsPerPageText }),
+      /* @__PURE__ */ jsxs(
+        Select,
+        {
+          className: `select__item-count`,
+          labelText: "",
+          hideLabel: true,
+          noLabel: true,
+          inline: true,
+          onValueChange: handleSizeChange,
+          disabled: pageSizeInputDisabled || disabled,
+          value: pageSize,
+          children: [
+            /* @__PURE__ */ jsx(SelectTrigger, { className: `border-0 shadow-none`, children: pageSize }),
+            /* @__PURE__ */ jsx(SelectContent, { children: pageSizes.map((sizeObj) => /* @__PURE__ */ jsx(SelectItem, { value: sizeObj.value, children: String(sizeObj.text) }, sizeObj.value)) })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsx("span", { className: "border-r border-solid border-neutral-300" }),
+      /* @__PURE__ */ jsx("span", { className: `whitespace-nowrap opacity-50 flex items-center pl-4`, children: pagesUnknown || !totalItems ? totalItems === 0 ? itemRangeText(0, 0, 0) : itemText(pageSize * (page - 1) + 1, page * pageSize) : itemRangeText(Math.min(pageSize * (page - 1) + 1, totalItems), Math.min(page * pageSize, totalItems), totalItems) })
+    ] }),
+    /* @__PURE__ */ jsx("span", { className: "border-r border-solid border-neutral-300" }),
+    /* @__PURE__ */ jsxs("div", { className: `flex whitespace-nowrap`, children: [
+      /* @__PURE__ */ jsx("span", { className: "border-r border-solid border-neutral-300" }),
+      pagesUnknown ? /* @__PURE__ */ jsx("span", { className: `whitespace-nowrap flex items-center`, children: pageText(page) }) : /* @__PURE__ */ jsxs("div", { className: "flex gap-1 pr-4", children: [
+        /* @__PURE__ */ jsxs(
+          Select,
+          {
+            labelText: `Page of ${totalPages} pages`,
+            inline: true,
+            hideLabel: true,
+            onValueChange: handlePageInputChange,
+            value: page,
+            disabled: pageInputDisabled || disabled,
+            children: [
+              /* @__PURE__ */ jsx(SelectTrigger, { className: `border-0 shadow-none`, children: page }),
+              /* @__PURE__ */ jsx(SelectContent, { children: selectItems })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsx("span", { className: "flex items-center opacity-50", children: pageRangeText(page, totalPages) })
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: "border-r border-solid border-neutral-300" }),
+      /* @__PURE__ */ jsxs("div", { className: `flex`, children: [
+        /* @__PURE__ */ jsxs("span", { className: backButtonClasses, "aria-label": backwardText, onClick: decrementPage, ref: backBtnRef, children: [
+          /* @__PURE__ */ jsx(TriangleLeftIcon, {}),
+          /* @__PURE__ */ jsx("span", { className: "sr-only", children: backwardText })
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "border-r border-solid border-neutral-300" }),
+        /* @__PURE__ */ jsxs("span", { className: forwardButtonClasses, "aria-label": forwardText, onClick: incrementPage, ref: backBtnRef, children: [
+          /* @__PURE__ */ jsx(TriangleRightIcon, {}),
+          /* @__PURE__ */ jsx("span", { className: "sr-only", children: forwardText })
+        ] })
+      ] })
+    ] })
+  ] });
+});
 
 const IdeWithAutocomplete = ({ onChange }) => {
   return /* @__PURE__ */ jsx(
@@ -2675,7 +3590,7 @@ function CollectionPage() {
   });
   const [sort, setSort] = useState({
     field: "",
-    direction: 1
+    direction: 0
   });
   const fetcher = useFetcher();
   const initRef = useRef(false);
@@ -2748,7 +3663,7 @@ function CollectionPage() {
     });
   }
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsx(Grid, { className: "database-page", fullWidth: true, children: /* @__PURE__ */ jsxs(Column, { lg: 16, md: 8, sm: 4, children: [
+    /* @__PURE__ */ jsxs("div", { className: "database-page", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pb-4", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsxs(Title, { title, children: [
@@ -2764,9 +3679,9 @@ function CollectionPage() {
             Button,
             {
               size: "sm",
-              kind: "danger--tertiary",
-              renderIcon: TrashCan,
-              iconDescription: "Delete Database",
+              variant: "danger",
+              icon: /* @__PURE__ */ jsx(TrashIcon, {}),
+              tooltip: "Delete Database",
               onClick: (e) => {
                 e.preventDefault();
                 setIsDelete(true);
@@ -2781,10 +3696,10 @@ function CollectionPage() {
             {
               hasIconOnly: true,
               size: "md",
-              kind: "ghost",
-              isSelected: view == "list",
-              renderIcon: ListBoxes,
-              iconDescription: "List View",
+              variant: "ghost",
+              className: view == "list" ? "bg-neutral-100" : "",
+              icon: /* @__PURE__ */ jsx(ListUnorderedIcon, {}),
+              tooltip: "List View",
               onClick: (e) => {
                 e.preventDefault();
                 setView("list");
@@ -2796,10 +3711,10 @@ function CollectionPage() {
             {
               hasIconOnly: true,
               size: "md",
-              kind: "ghost",
-              isSelected: view == "grid",
-              renderIcon: TableSplit,
-              iconDescription: "Table View",
+              variant: "ghost",
+              className: view == "grid" ? "bg-neutral-100" : "",
+              icon: /* @__PURE__ */ jsx(ServerIcon, {}),
+              tooltip: "Table View",
               onClick: (e) => {
                 e.preventDefault();
                 setView("grid");
@@ -2808,84 +3723,32 @@ function CollectionPage() {
           )
         ] })
       ] }),
-      /* @__PURE__ */ jsxs("div", { className: "mt-1 mb-1 border-t border-solid border-neutral-100", children: [
+      /* @__PURE__ */ jsxs("div", { className: "p-4 mt-1 mb-1 border border-solid border-neutral-300", children: [
         /* @__PURE__ */ jsxs("div", { className: "py-1", children: [
           /* @__PURE__ */ jsx("span", { className: "block text-base font-bold", children: "Query" }),
           /* @__PURE__ */ jsx("span", { className: "block mb-2 text-xs opacity-50", children: "Please enter your query below" })
         ] }),
-        /* @__PURE__ */ jsxs(Tabs, { children: [
-          /* @__PURE__ */ jsxs(TabList, { "aria-label": "List of tabs", contained: true, children: [
-            /* @__PURE__ */ jsx(Tab, { children: "Json Editor" }),
-            /* @__PURE__ */ jsx(Tab, { children: "Codeium (Raw)" })
+        /* @__PURE__ */ jsxs(Tabs, { defaultValue: "json", children: [
+          /* @__PURE__ */ jsxs(TabsList, { className: "bg-neutral-100", "aria-label": "List of tabs", children: [
+            /* @__PURE__ */ jsx(TabsTrigger, { value: "json", children: "Json Editor" }),
+            /* @__PURE__ */ jsx(TabsTrigger, { value: "editor", children: "Codeium (Raw)" })
           ] }),
-          /* @__PURE__ */ jsxs(TabPanels, { children: [
-            /* @__PURE__ */ jsxs(TabPanel, { children: [
-              /* @__PURE__ */ jsx("div", { className: "bg-white min-h-36", children: /* @__PURE__ */ jsx(JsonTreeEditor, { data: jsonQuery, autocompleteItems: columns, onChange: (data2) => setJsonQuery(data2) }) }),
-              /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 mt-2", children: [
-                /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
-                  fetcher.state == "submitting" || fetcher.state == "loading" ? /* @__PURE__ */ jsx(ButtonSkeleton, { size: "sm" }) : /* @__PURE__ */ jsx(
-                    Button,
-                    {
-                      size: "sm",
-                      renderIcon: ArrowRight,
-                      onClick: (e) => {
-                        e.preventDefault();
-                        setErrorJsonQueryString("");
-                        setCurrenPage({ ...currentPage, page: 1 });
-                        fetcher.submit(
-                          {
-                            query: EJSON.stringify(jsonQuery)
-                          },
-                          {
-                            method: "POST",
-                            encType: "application/json",
-                            action: `/database/${params.db}/${params.col}`
-                          }
-                        );
-                      },
-                      children: "Execute"
-                    }
-                  ),
-                  /* @__PURE__ */ jsx(CopyTextButton, { size: "sm", className: "ml-2", kind: "ghost", text: EJSON.stringify(jsonQuery), children: "Copy as BSON" })
-                ] }),
-                errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
-              ] })
-            ] }),
-            /* @__PURE__ */ jsxs(TabPanel, { children: [
-              /* @__PURE__ */ jsx(
-                IdeWithAutocomplete,
-                {
-                  onChange: (data2) => {
-                    setJsonQueryString(data2);
-                    try {
-                      setJsonQuery(EJSON.parse(data2));
-                      setErrorJsonQueryString("");
-                    } catch (e) {
-                      setErrorJsonQueryString(e.message);
-                    }
-                  }
-                }
-              ),
-              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 mt-2", children: [
+          /* @__PURE__ */ jsxs(TabsContent, { value: "json", children: [
+            /* @__PURE__ */ jsx("div", { className: "bg-white min-h-36", children: /* @__PURE__ */ jsx(JsonTreeEditor, { data: jsonQuery, autocompleteItems: columns, onChange: (data2) => setJsonQuery(data2) }) }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 mt-2", children: [
+              /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
                 fetcher.state == "submitting" || fetcher.state == "loading" ? /* @__PURE__ */ jsx(ButtonSkeleton, { size: "sm" }) : /* @__PURE__ */ jsx(
                   Button,
                   {
                     size: "sm",
-                    renderIcon: ArrowRight,
+                    icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}),
                     onClick: (e) => {
                       e.preventDefault();
-                      let jsonOutput = null;
-                      try {
-                        jsonOutput = EJSON.parse(jsonQueryString);
-                      } catch (e2) {
-                        setErrorJsonQueryString(e2.message);
-                        return;
-                      }
                       setErrorJsonQueryString("");
                       setCurrenPage({ ...currentPage, page: 1 });
                       fetcher.submit(
                         {
-                          query: jsonQueryString
+                          query: EJSON.stringify(jsonQuery)
                         },
                         {
                           method: "POST",
@@ -2897,97 +3760,150 @@ function CollectionPage() {
                     children: "Execute"
                   }
                 ),
-                errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
-              ] })
+                /* @__PURE__ */ jsx(CopyTextButton, { size: "sm", className: "ml-2", variant: "ghost", text: EJSON.stringify(jsonQuery), children: "Copy as BSON" })
+              ] }),
+              errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs(TabsContent, { value: "editor", children: [
+            /* @__PURE__ */ jsx(
+              IdeWithAutocomplete,
+              {
+                onChange: (data2) => {
+                  setJsonQueryString(data2);
+                  try {
+                    setJsonQuery(EJSON.parse(data2));
+                    setErrorJsonQueryString("");
+                  } catch (e) {
+                    setErrorJsonQueryString(e.message);
+                  }
+                }
+              }
+            ),
+            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 mt-2", children: [
+              fetcher.state == "submitting" || fetcher.state == "loading" ? /* @__PURE__ */ jsx(ButtonSkeleton, { size: "sm" }) : /* @__PURE__ */ jsx(
+                Button,
+                {
+                  size: "sm",
+                  icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}),
+                  onClick: (e) => {
+                    e.preventDefault();
+                    let jsonOutput = null;
+                    try {
+                      jsonOutput = EJSON.parse(jsonQueryString);
+                    } catch (e2) {
+                      setErrorJsonQueryString(e2.message);
+                      return;
+                    }
+                    setErrorJsonQueryString("");
+                    setCurrenPage({ ...currentPage, page: 1 });
+                    fetcher.submit(
+                      {
+                        query: jsonQueryString
+                      },
+                      {
+                        method: "POST",
+                        encType: "application/json",
+                        action: `/database/${params.db}/${params.col}`
+                      }
+                    );
+                  },
+                  children: "Execute"
+                }
+              ),
+              errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
             ] })
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ jsx("div", { className: "mb-3 bg-neutral-100", children: /* @__PURE__ */ jsx(Accordion, { children: /* @__PURE__ */ jsx(AccordionItem, { title: "Statistics", className: "pr-0 ", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-start w-full pb-4 lg:flex-row", children: [
-        /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { children: /* @__PURE__ */ jsxs(TableBody, { children: [
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Namespace" }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.ns })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Host" }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.host })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Local Time" }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.localTime })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Reads Latency" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.latencyStats?.reads.latency),
-              " ms"
+      /* @__PURE__ */ jsx("div", { className: "mb-3 bg-neutral-100", children: /* @__PURE__ */ jsx(Accordion, { type: "multiple", children: /* @__PURE__ */ jsxs(AccordionItem, { value: "statistics", className: "pr-0 ", children: [
+        /* @__PURE__ */ jsx(AccordionTrigger, { className: "px-4 border-t border-solid border-neutral-200", children: /* @__PURE__ */ jsx("span", { className: "font-medium", children: "Statistics" }) }),
+        /* @__PURE__ */ jsx(AccordionContent, { className: "px-0", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col items-start w-full pb-4 lg:flex-row", children: [
+          /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Namespace" }),
+              /* @__PURE__ */ jsx(TableCell, { children: stats.ns })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Host" }),
+              /* @__PURE__ */ jsx(TableCell, { children: stats.host })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Local Time" }),
+              /* @__PURE__ */ jsx(TableCell, { children: stats.localTime })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Reads Latency" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.latencyStats?.reads.latency),
+                " ms"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Writes Latency" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.latencyStats?.writes.latency),
+                " ms"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Commands Latency" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.latencyStats?.commands.latency),
+                " ms"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Transactions Latency" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.latencyStats?.transactions.latency),
+                " ms"
+              ] })
             ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Writes Latency" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.latencyStats?.writes.latency),
-              " ms"
+          ] }) }) }),
+          /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "mt-4 text-md lg:mt-0", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Storage Size" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.storageStats?.storageSize),
+                " B"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Total Index Size" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.storageStats?.totalIndexSize),
+                " B"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Total Size" }),
+              /* @__PURE__ */ jsxs(TableCell, { children: [
+                numberWithCommas(stats.storageStats?.totalSize),
+                " B"
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Count" }),
+              /* @__PURE__ */ jsx(TableCell, { children: stats.storageStats?.count })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Collection Scans Total" }),
+              /* @__PURE__ */ jsx(TableCell, { children: numberWithCommas(stats.queryExecStats?.collectionScans.total) })
+            ] }),
+            /* @__PURE__ */ jsxs(TableRow, { children: [
+              /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Collection Scans Non-Tailable" }),
+              /* @__PURE__ */ jsx(TableCell, { children: numberWithCommas(stats.queryExecStats?.collectionScans.nonTailable) })
             ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Commands Latency" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.latencyStats?.commands.latency),
-              " ms"
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Transactions Latency" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.latencyStats?.transactions.latency),
-              " ms"
-            ] })
-          ] })
-        ] }) }) }),
-        /* @__PURE__ */ jsx("div", { className: "flex-1 w-full", children: /* @__PURE__ */ jsx(Table, { className: "mt-4 lg:mt-0", children: /* @__PURE__ */ jsxs(TableBody, { children: [
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Storage Size" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.storageStats?.storageSize),
-              " B"
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Total Index Size" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.storageStats?.totalIndexSize),
-              " B"
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Total Size" }),
-            /* @__PURE__ */ jsxs(TableCell, { children: [
-              numberWithCommas(stats.storageStats?.totalSize),
-              " B"
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Count" }),
-            /* @__PURE__ */ jsx(TableCell, { children: stats.storageStats?.count })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Collection Scans Total" }),
-            /* @__PURE__ */ jsx(TableCell, { children: numberWithCommas(stats.queryExecStats?.collectionScans.total) })
-          ] }),
-          /* @__PURE__ */ jsxs(TableRow, { children: [
-            /* @__PURE__ */ jsx(TableCell, { className: "font-bold", children: "Collection Scans Non-Tailable" }),
-            /* @__PURE__ */ jsx(TableCell, { children: numberWithCommas(stats.queryExecStats?.collectionScans.nonTailable) })
-          ] })
-        ] }) }) })
-      ] }) }) }) }),
-      /* @__PURE__ */ jsx("div", { className: "w-ful min-h-72", children: items })
-    ] }) }),
+          ] }) }) })
+        ] }) })
+      ] }) }) }),
+      /* @__PURE__ */ jsx("div", { className: "w-full min-h-72", children: items })
+    ] }),
     /* @__PURE__ */ jsx(
       Pagination,
       {
-        className: "mt-3 mb-10",
+        className: "mt-3 mb-10 text-sm",
         backwardText: "Previous page",
         forwardText: "Next page",
         itemsPerPageText: "Items per page:",
@@ -3093,6 +4009,12 @@ const action$5 = async ({ request }) => {
     return Response.json({ status: "error", message: e.message }, { status: 500 });
   }
 };
+var sortingSelect = /* @__PURE__ */ ((sortingSelect2) => {
+  sortingSelect2["name"] = "Name";
+  sortingSelect2["sizeOnDisk"] = "Size on Disk";
+  sortingSelect2["empty"] = "Empty";
+  return sortingSelect2;
+})(sortingSelect || {});
 function DatabasePage() {
   const loaderData = useLoaderData();
   const [sort, setSort] = useState("");
@@ -3102,7 +4024,10 @@ function DatabasePage() {
   const navigate = useNavigate();
   const stats = loaderData?.stats;
   if (loaderData?.error) {
-    return /* @__PURE__ */ jsx(InlineNotification, { title: "Error", subtitle: loaderData.error, hideCloseButton: true });
+    return /* @__PURE__ */ jsxs(Alert, { children: [
+      /* @__PURE__ */ jsx(AlertTitle, { children: "An error occurred while fetching the database stats." }),
+      /* @__PURE__ */ jsx(AlertDescription, { children: loaderData.error })
+    ] });
   }
   if (!stats) {
     return /* @__PURE__ */ jsx("div", { children: "Loading..." });
@@ -3131,7 +4056,7 @@ function DatabasePage() {
       break;
   }
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsx(Grid, { className: "database-page", fullWidth: true, children: /* @__PURE__ */ jsxs(Column, { lg: 16, md: 8, sm: 4, children: [
+    /* @__PURE__ */ jsx("div", { className: "database-page", children: /* @__PURE__ */ jsxs("div", { children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pb-4", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsxs(Title, { title: stats.databases.length, children: [
@@ -3146,14 +4071,14 @@ function DatabasePage() {
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-end gap-2", children: [
           /* @__PURE__ */ jsx(
-            Search,
+            SearchInput,
             {
               placeholder: "Find a database",
-              labelText: "Search",
-              closeButtonLabelText: "Clear search input",
+              value: search,
+              className: "bg-neutral-100",
               id: "search-database",
-              onChange: (e) => {
-                setSearch(e.target.value);
+              onChange: (v) => {
+                setSearch(v);
               }
             }
           ),
@@ -3161,16 +4086,14 @@ function DatabasePage() {
           /* @__PURE__ */ jsxs(
             Select,
             {
-              hideLabel: true,
-              id: "sort",
-              onChange: (e) => {
-                setSort(e.target.value);
+              onValueChange: (value) => {
+                setSort(value);
               },
               children: [
-                /* @__PURE__ */ jsx(SelectItem, { value: "", text: "---" }),
-                /* @__PURE__ */ jsx(SelectItem, { value: "name", text: "By Name" }),
-                /* @__PURE__ */ jsx(SelectItem, { value: "sizeOnDisk", text: "By Size on Disk" }),
-                /* @__PURE__ */ jsx(SelectItem, { value: "empty", text: "By Empty" })
+                /* @__PURE__ */ jsx(SelectTrigger, { children: /* @__PURE__ */ jsx("span", { className: "text-sm", children: sort == "" ? "---" : sortingSelect[sort] }) }),
+                /* @__PURE__ */ jsx(SelectContent, { children: Object.keys(sortingSelect).map((key) => {
+                  return /* @__PURE__ */ jsx(SelectItem, { value: key, children: sortingSelect[key] }, key);
+                }) })
               ]
             }
           ),
@@ -3178,10 +4101,10 @@ function DatabasePage() {
             Button,
             {
               hasIconOnly: true,
-              size: "md",
-              kind: "ghost",
-              renderIcon: direction == "asc" ? SortAscending : SortDescending,
-              iconDescription: "Sort Direction",
+              size: "lg",
+              variant: "ghost",
+              icon: direction == "asc" ? /* @__PURE__ */ jsx(SortAscIcon, {}) : /* @__PURE__ */ jsx(SortDescIcon, {}),
+              tooltip: "Sort Direction",
               onClick: (e) => {
                 e.preventDefault();
                 setDirection(direction == "asc" ? "desc" : "asc");
@@ -3197,7 +4120,7 @@ function DatabasePage() {
         return /* @__PURE__ */ jsxs("div", { className: "mb-3 bg-neutral-100", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-4 py-2 text-base border-b border-solid border-neutral-200", children: [
             /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-1", children: [
-              /* @__PURE__ */ jsx(DataTable, {}),
+              /* @__PURE__ */ jsx(DatabaseIcon, {}),
               " ",
               /* @__PURE__ */ jsx("strong", { children: database.name })
             ] }),
@@ -3205,8 +4128,8 @@ function DatabasePage() {
               /* @__PURE__ */ jsx(
                 Button,
                 {
-                  kind: "danger--tertiary",
-                  renderIcon: TrashCan,
+                  variant: "error",
+                  icon: /* @__PURE__ */ jsx(TrashIcon, {}),
                   size: "sm",
                   onClick: (e) => {
                     e.preventDefault();
@@ -3215,7 +4138,7 @@ function DatabasePage() {
                   children: "Drop Database"
                 }
               ),
-              /* @__PURE__ */ jsx(Button, { kind: "tertiary", renderIcon: ArrowRight, size: "sm", href: `/database/${database.name}`, children: "View" })
+              /* @__PURE__ */ jsx(Button, { variant: "secondary", iconPosition: "right", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), size: "sm", href: `/database/${database.name}`, children: "View" })
             ] })
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-5 px-4 py-2", children: [
@@ -3254,6 +4177,59 @@ const route3 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   default: DatabasePage,
   loader: loader$7
 }, Symbol.toStringTag, { value: 'Module' }));
+
+const CheckboxNative = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+    CheckboxPrimitive.Root,
+    {
+      ref,
+      className: cn(
+        "peer h-4 w-4 shrink-0  border border-primary shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+        className
+      ),
+      ...props,
+      children: /* @__PURE__ */ jsx(CheckboxPrimitive.Indicator, { className: cn("flex items-center justify-center text-current"), children: /* @__PURE__ */ jsx(Check, { className: "w-4 h-4" }) })
+    }
+  )
+);
+const Checkbox = React.forwardRef(
+  ({ className, helperText, labelText, onChange, invalid, invalidText, hideLabel, readOnly, title = "", warn, warnText, ...other }, ref) => {
+    const showWarning = !readOnly && !invalid && warn;
+    const showHelper = !invalid && !warn;
+    const helper = helperText ? /* @__PURE__ */ jsx("div", { className: `text-xs text-black opacity-50`, children: helperText }) : null;
+    return /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-2", children: [
+      /* @__PURE__ */ jsx(
+        CheckboxNative,
+        {
+          ...other,
+          "data-invalid": invalid ? true : void 0,
+          className: "mt-0.5" + (invalid ? " border-red-500" : ""),
+          onCheckedChange: (checked) => {
+            if (!readOnly && onChange) {
+              onChange(!!checked);
+            }
+          },
+          ref: (el) => {
+            if (typeof ref === "function") {
+              ref(el);
+            } else if (ref && "current" in ref) {
+              ref.current = el;
+            }
+          },
+          "aria-readonly": readOnly
+        }
+      ),
+      /* @__PURE__ */ jsxs("div", { className: `flex flex-col`, children: [
+        /* @__PURE__ */ jsx("label", { className: `text-sm tracking-wide`, title, children: labelText }),
+        /* @__PURE__ */ jsxs("div", { className: `flex items-start gap-2`, children: [
+          !readOnly && invalid && /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx("div", { className: `text-red-500 `, children: invalidText }) }),
+          showWarning && /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx("div", { className: `text-yellow-500 `, children: warnText }) })
+        ] }),
+        showHelper && helper
+      ] })
+    ] });
+  }
+);
 
 const ConnectionDeleteModal = ({ open, onClose, onSuccess, id }) => {
   const fetcher = useFetcher();
@@ -3294,14 +4270,15 @@ const ConnectionDeleteModal = ({ open, onClose, onSuccess, id }) => {
     {
       open,
       danger: true,
-      loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+      loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
       loadingDescription: description,
       modalHeading: "Delete Connection",
       modalLabel: "Database Connection",
       primaryButtonText: "Yes",
       secondaryButtonText: "No",
-      onRequestClose: onClose,
-      onRequestSubmit: submitDelete,
+      onClose,
+      onPrimaryClick: submitDelete,
+      onSecondaryClick: onClose,
       children: /* @__PURE__ */ jsx("h3", { children: "Are you sure you want to delete this connection?" })
     }
   );
@@ -3346,25 +4323,27 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
   useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
       setDescription(mode == "edit" ? "Updated" : "Connected!");
-      setStatus("finished");
+      toast({
+        title: mode == "edit" ? "Updated" : "Connected!",
+        type: "background"
+      });
       setTimeout(() => {
         onSuccess();
         onClose();
       }, 2e3);
     } else if (fetcher.data && fetcher.data.status == "error") {
       setDescription(fetcher.data.message || "");
-      setStatus("error");
       setErrors(fetcher.data.errors || {});
-      setTimeout(() => {
-        resetStatus();
-      }, 2e3);
+      toast({
+        title: "Error",
+        description: fetcher.data.message || "An error occurred",
+        variant: "error"
+      });
     }
   }, [fetcher.data]);
-  const [status, setStatus] = useState("inactive");
   const [description, setDescription] = useState("Connecting...");
   const [modalDelete, setModalDelete] = useState(false);
   const submit = async () => {
-    setStatus("active");
     fetcher.submit(
       {
         [mode]: state
@@ -3376,31 +4355,26 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
       }
     );
   };
-  const resetStatus = () => {
-    setStatus("inactive");
-    setDescription("Connecting...");
-  };
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsx(
       Modal,
       {
         open,
         danger: mode == "edit",
-        onRequestClose: onClose,
-        onRequestSubmit: mode == "edit" ? () => {
+        onClose,
+        onPrimaryClick: mode == "edit" ? () => {
           setModalDelete(true);
         } : submit,
-        loadingStatus: fetcher.state == "loading" || fetcher.state == "submitting" ? "active" : status,
+        loading: fetcher.state == "loading" || fetcher.state == "submitting" ? true : false,
         loadingDescription: description,
-        onLoadingSuccess: resetStatus,
         modalHeading: mode == "edit" ? `Update Connection` : "Create a new database connection",
         modalLabel: "Database Connection",
-        onSecondarySubmit: mode == "edit" ? submit : void 0,
+        onSecondaryClick: mode == "edit" ? submit : void 0,
         primaryButtonText: mode == "edit" ? "Delete" : "Create",
         secondaryButtonText: mode == "edit" ? "Update" : "Cancel",
-        children: /* @__PURE__ */ jsx(Form, { "aria-label": "Database Connection form", autoComplete: "new-password", children: /* @__PURE__ */ jsxs(Stack, { gap: 4, children: [
+        children: /* @__PURE__ */ jsx(Form, { "aria-label": "Database Connection form", autoComplete: "new-password", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-4", children: [
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "name",
               labelText: "Name",
@@ -3417,14 +4391,13 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
             }
           ),
           /* @__PURE__ */ jsx("hr", {}),
-          /* @__PURE__ */ jsxs(FormGroup, { legendText: "Connection Details", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx(
-              TextInput,
+              Input,
               {
                 id: "connectionString",
                 labelText: "Connection String",
                 autoComplete: "new-password",
-                hideLabel: true,
                 type: "text",
                 required: true,
                 invalid: errors["connectionString"],
@@ -3441,38 +4414,37 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
               /* @__PURE__ */ jsx("b", { children: "*" }),
               "Use ",
               /* @__PURE__ */ jsx("b", { children: '"directConnection=true"' }),
-              " parameter to run operations on host ",
+              " parameter to run operations on host",
+              " ",
               /* @__PURE__ */ jsx("a", { className: "text-blue-600 hover:underline", target: "_blank", href: "https://www.mongodb.com/docs/drivers/node/v3.6/fundamentals/connection/connect/", children: "View More" })
             ] })
           ] }),
           /* @__PURE__ */ jsx(
             Checkbox,
             {
-              id: "tls",
               labelText: "TLS",
               helperText: "set to true to enable TLS/SSL",
               checked: state.tls,
-              onChange: (e) => {
-                setState({ ...state, tls: e.target.checked });
+              onChange: (checked) => {
+                setState({ ...state, tls: checked });
               }
             }
           ),
-          /* @__PURE__ */ jsxs(Stack, { gap: 4, className: state.tls ? "" : "hidden", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-4" + (state.tls ? "" : " hidden"), children: [
             /* @__PURE__ */ jsx(
               Checkbox,
               {
-                id: "tlsAllowInvalidCertificates",
                 labelText: "TLS Allow Invalid Certificates",
                 helperText: "validate mongod server certificate against CA",
                 checked: state.tlsAllowInvalidCertificates,
-                onChange: (e) => {
-                  setState({ ...state, tlsAllowInvalidCertificates: e.target.checked });
+                onChange: (checked) => {
+                  setState({ ...state, tlsAllowInvalidCertificates: checked });
                 },
                 disabled: !state.tls
               }
             ),
             /* @__PURE__ */ jsx(
-              TextInput,
+              Input,
               {
                 id: "tlsCAFile",
                 labelText: "TLS CA File",
@@ -3489,7 +4461,7 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
               }
             ),
             /* @__PURE__ */ jsx(
-              TextInput,
+              Input,
               {
                 id: "tlsCertificateKeyFile",
                 autoComplete: "new-password",
@@ -3506,7 +4478,7 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
               }
             ),
             /* @__PURE__ */ jsx(
-              TextInput,
+              Input,
               {
                 id: "tlsCertificateKeyFilePassword",
                 labelText: "TLS Certificate Key File Password",
@@ -3524,10 +4496,11 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
             )
           ] }),
           /* @__PURE__ */ jsx(
-            NumberInput,
+            Input,
             {
               id: "maxPoolSize",
-              label: "Max Pool Size",
+              labelText: "Max Pool Size",
+              type: "number",
               min: 1,
               max: 100,
               value: state.maxPoolSize,
@@ -3537,7 +4510,7 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
             }
           ),
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "whitelist",
               autoComplete: "new-password",
@@ -3553,7 +4526,7 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
             }
           ),
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "blacklist",
               autoComplete: "new-password",
@@ -3571,12 +4544,11 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
           /* @__PURE__ */ jsx(
             Checkbox,
             {
-              id: "allowDiskUse",
               labelText: "Allow Disk Use",
               helperText: "set to true to remove the limit of 100 MB of RAM on each aggregation pipeline stage",
               checked: state.allowDiskUse,
-              onChange: (e) => {
-                setState({ ...state, allowDiskUse: e.target.checked });
+              onChange: (checked) => {
+                setState({ ...state, allowDiskUse: checked });
               }
             }
           )
@@ -3599,18 +4571,37 @@ const ConnectionModal = ({ open, onClose, onSuccess, mode = "add", initialData =
 };
 const SwitchConnection = ({ current, connections }) => {
   const fetcher = useFetcher();
+  const [selectedConnection, setSelectedConnection] = useState(current);
   useEffect(() => {
-  }, []);
-  const onChange = ({ selectedItem }) => {
-    if (!selectedItem) {
-      return;
+    if (selectedConnection && (fetcher.state == "submitting" || fetcher.state == "loading")) {
+      const connection = connections.find((c) => c.id == selectedConnection.id);
+      if (connection) {
+        toast({
+          title: "Connecting, Please wait...",
+          description: `Connecting to "${connection.name}"`,
+          variant: "default"
+        });
+      }
     }
-    if (selectedItem.id == "new") {
-      window.location.href = `/connections`;
+  }, [fetcher.state]);
+  useEffect(() => {
+    if (fetcher.data && fetcher.data.status == "success") {
+      window.location.href = fetcher.data.redirect || "/";
+    } else if (fetcher.data && fetcher.data.status == "error") {
+      toast({
+        title: "Error",
+        description: fetcher.data.message,
+        variant: "error"
+      });
+    }
+  }, [fetcher.data]);
+  const onChange = (selectedItem) => {
+    if (!selectedItem || !selectedItem.id) {
       return;
     }
     const connection = connections.find((c) => c.id == selectedItem.id);
     if (connection) {
+      setSelectedConnection(connection);
       fetcher.submit(
         {
           connect: { id: connection.id }
@@ -3623,26 +4614,32 @@ const SwitchConnection = ({ current, connections }) => {
       );
     }
   };
-  return /* @__PURE__ */ jsx(
-    Dropdown,
+  let items = connections || [];
+  return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsxs(
+    Select,
     {
-      type: "inline",
-      id: "default",
-      size: "sm",
-      hideLabel: true,
-      titleText: "Connection",
-      onChange,
-      selectedItem: current || null,
-      label: current?.name || "Select a connection",
-      items: (connections || []).concat([
-        {
-          id: "new",
-          name: "Add New Connection"
+      onValueChange: (value) => {
+        if (value == "new") {
+          window.location.href = `/connections`;
+          return;
         }
-      ]),
-      itemToString: (item) => item ? item.name : ""
+        onChange(items.find((item) => item.id == value));
+      },
+      value: current ? current.id : null,
+      children: [
+        /* @__PURE__ */ jsx(SelectTrigger, { className: "w-[180px]", children: /* @__PURE__ */ jsx(SelectValue, { children: current?.name || "Select a connection" }) }),
+        /* @__PURE__ */ jsxs(SelectContent, { className: "bg-white", children: [
+          items.map((item) => {
+            return /* @__PURE__ */ jsx(SelectItem, { value: item.id, children: item.name }, item.id);
+          }),
+          /* @__PURE__ */ jsxs(SelectGroup, { children: [
+            /* @__PURE__ */ jsx(SelectLabel, { className: "mt-5 text-xs font-normal uppercase opacity-50", children: "New Connection" }),
+            /* @__PURE__ */ jsx(SelectItem, { className: "text-sm", value: "new", children: "Add New Connection" })
+          ] })
+        ] })
+      ]
     }
-  );
+  ) });
 };
 
 const Logo = ({ className }) => {
@@ -3733,6 +4730,30 @@ const Logo = ({ className }) => {
     ),
     /* @__PURE__ */ jsx("path", { d: "M350.085 9V2.965H351.9V9H350.085ZM348.37 4.115V2.61H353.61V4.115H348.37Z", fill: "black" })
   ] });
+};
+
+const ActionableNotification = ({ title, variant, subtitle, closeOnEscape = true, inline = true, onClose }) => {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (closeOnEscape) {
+      const handleKeyDown = (event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      };
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+  }, [closeOnEscape, onClose]);
+  return /* @__PURE__ */ jsx(Alert, { ref, className: "bg-white " + (inline ? "inline-block" : "block"), variant, children: /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between", children: [
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(AlertTitle, { children: title }),
+      subtitle ? /* @__PURE__ */ jsx("p", { children: subtitle }) : null
+    ] }),
+    /* @__PURE__ */ jsx("button", { onClick: onClose, className: "ml-4 -mt-1 -mr-2", children: /* @__PURE__ */ jsx(XIcon, { className: "w-4 h-4" }) })
+  ] }) });
 };
 
 const loader$6 = async ({ request }) => {
@@ -4021,100 +5042,117 @@ const action$4 = async ({ request }) => {
 function Dashboard$3() {
   const loaderData = useLoaderData();
   const { connections } = loaderData;
-  const [error, setError] = React.useState(null);
+  const [error, setError] = React__default.useState(null);
+  const [current, setCurrent] = React__default.useState(null);
   const fetcher = useFetcher();
   useEffect(() => {
+    if (fetcher.state == "submitting") {
+      toast({
+        duration: 1e4,
+        type: "background",
+        title: "Connecting, Please wait...",
+        description: `Connecting to "${current?.name}"`,
+        variant: "warning"
+      });
+    }
+  }, [fetcher.state]);
+  useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
-      window.location.href = fetcher.data.redirect || "/";
+      let redirectTo = fetcher.data.redirect || "/";
+      setTimeout(() => {
+        window.location.href = redirectTo;
+      }, 1e3);
       return;
     } else if (fetcher.data && fetcher.data.status == "error") {
       setError(fetcher.data.message || null);
-      setTimeout(() => {
-        setError(null);
-      }, 2e3);
     }
+    setCurrent(null);
   }, [fetcher.data]);
-  const [connectionModal, setConnectionModal] = React.useState({
+  const [connectionModal, setConnectionModal] = React__default.useState({
     mode: "add",
     open: false,
     connection: null
   });
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs(Layer, { className: "w-full max-w-md p-6 mx-auto my-16 mb-16 bg-white border border-solid shadow-lg border-neutral-200", children: [
+    /* @__PURE__ */ jsxs("div", { className: "w-full max-w-md p-6 mx-auto my-16 mb-16 bg-white border border-solid border-neutral-200", children: [
       /* @__PURE__ */ jsx("h2", { className: "mb-2 text-4xl font-bold", children: /* @__PURE__ */ jsx(Logo, { className: "h-8" }) }),
       /* @__PURE__ */ jsx("p", { className: "mb-10 text-sm", children: "Welcome to MongoCarbon, Please select or create a new connection below:" }),
-      /* @__PURE__ */ jsx(Accordion, { children: connections.map((connection) => /* @__PURE__ */ jsxs(AccordionItem, { title: connection.name, className: "bg-neutral-100", children: [
-        /* @__PURE__ */ jsx("h3", { className: "mb-2 text-xl font-medium", children: connection.name }),
-        /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 break-all", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 border-t border-b border-solid border-neutral-200", children: [
-            /* @__PURE__ */ jsx("span", { className: "text-sm", children: "Connection String:" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "font-medium", children: connection.connectionString })
+      /* @__PURE__ */ jsx(Accordion, { type: "single", collapsible: true, className: "overflow-hidden ", children: connections.map((connection, index) => /* @__PURE__ */ jsxs(AccordionItem, { value: connection.id, title: connection.name, className: "bg-neutral-100", children: [
+        /* @__PURE__ */ jsx(AccordionTrigger, { className: "px-4 border-t border-solid border-neutral-200", children: /* @__PURE__ */ jsx("span", { className: "font-medium", children: connection.name }) }),
+        /* @__PURE__ */ jsxs(AccordionContent, { className: "px-4", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 break-all", children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 border-t border-b border-solid border-neutral-200", children: [
+              /* @__PURE__ */ jsx("span", { className: "text-sm", children: "Connection String:" }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "font-medium", children: connection.connectionString })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex py-2 text-sm border-b border-solid border-neutral-200", children: [
+              /* @__PURE__ */ jsx("span", { children: "Max Pool Size:" }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.maxPoolSize })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex py-2 text-sm border-b border-solid border-neutral-200", children: [
+              /* @__PURE__ */ jsx("span", { children: "Allow Disk Use:" }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.allowDiskUse ? "Yes" : "No" })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 text-sm border-b border-solid border-neutral-200", children: [
+              /* @__PURE__ */ jsx("span", { children: "Whitelist:" }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.whitelist })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 text-sm border-b border-solid border-neutral-200", children: [
+              /* @__PURE__ */ jsx("span", { children: "Blacklist:" }),
+              " ",
+              /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.blacklist })
+            ] })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex py-2 text-sm border-b border-solid border-neutral-200", children: [
-            /* @__PURE__ */ jsx("span", { children: "Max Pool Size:" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.maxPoolSize })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex py-2 text-sm border-b border-solid border-neutral-200", children: [
-            /* @__PURE__ */ jsx("span", { children: "Allow Disk Use:" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.allowDiskUse ? "Yes" : "No" })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 text-sm border-b border-solid border-neutral-200", children: [
-            /* @__PURE__ */ jsx("span", { children: "Whitelist:" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.whitelist })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex flex-col py-2 text-sm border-b border-solid border-neutral-200", children: [
-            /* @__PURE__ */ jsx("span", { children: "Blacklist:" }),
-            " ",
-            /* @__PURE__ */ jsx("span", { className: "ml-2", children: connection.blacklist })
+          /* @__PURE__ */ jsxs("div", { className: "flex w-full gap-2 mt-4", children: [
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                variant: "default",
+                loading: !!current && current.id == connection.id,
+                icon: /* @__PURE__ */ jsx(VersionsIcon, {}),
+                onClick: () => {
+                  setCurrent(connection);
+                  fetcher.submit(
+                    {
+                      connect: connection
+                    },
+                    {
+                      method: "POST",
+                      encType: "application/json",
+                      action: `/connections`
+                    }
+                  );
+                },
+                children: "Connect"
+              }
+            ),
+            /* @__PURE__ */ jsx(
+              Button,
+              {
+                size: "sm",
+                variant: "ghost",
+                icon: /* @__PURE__ */ jsx(PencilIcon, {}),
+                onClick: () => {
+                  setConnectionModal({ mode: "edit", open: true, connection });
+                },
+                className: "ml-auto",
+                children: "Edit"
+              }
+            )
           ] })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex w-full gap-2 mt-4", children: [
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              kind: "primary",
-              renderIcon: Connect,
-              onClick: () => {
-                fetcher.submit(
-                  {
-                    connect: connection
-                  },
-                  {
-                    method: "POST",
-                    encType: "application/json",
-                    action: `/connections`
-                  }
-                );
-              },
-              children: "Connect"
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              kind: "ghost",
-              renderIcon: Edit,
-              onClick: () => {
-                setConnectionModal({ mode: "edit", open: true, connection });
-              },
-              className: "ml-auto",
-              children: "Edit"
-            }
-          )
         ] })
-      ] }, connection.id)) }),
+      ] }, `${connection.id}-${index}`)) }),
       /* @__PURE__ */ jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsx(
         Button,
         {
           size: "sm",
-          kind: "tertiary",
-          renderIcon: Connect,
+          variant: "secondary",
+          icon: /* @__PURE__ */ jsx(VersionsIcon, {}),
           onClick: () => {
             setConnectionModal({ mode: "add", open: true, connection: null });
           },
@@ -4122,7 +5160,7 @@ function Dashboard$3() {
         }
       ) })
     ] }),
-    error && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { title: "Error", subtitle: error, closeOnEscape: true, inline: false, onClose: () => setError(null) }) }),
+    error && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { variant: "error", title: "Error", subtitle: error, closeOnEscape: true, inline: false, onClose: () => setError(null) }) }),
     /* @__PURE__ */ jsx(
       ConnectionModal,
       {
@@ -4159,7 +5197,6 @@ const loader$5 = async ({ request }) => {
 const action$3 = async ({ request }) => {
   const user = await requireUser(request, "/login?redirect=/profile");
   const formData = await request.formData();
-  formData.get("username");
   const password = formData.get("password");
   const confirm_password = formData.get("confirm_password");
   if (typeof password !== "string" || typeof confirm_password !== "string") {
@@ -4213,14 +5250,14 @@ function Dashboard$2() {
     }
   }, [actionData]);
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs(Layer, { className: "w-full max-w-md p-6 mx-auto my-16 mb-16 bg-white border border-solid shadow-lg border-neutral-200", children: [
+    /* @__PURE__ */ jsxs("div", { className: "w-full max-w-md p-6 mx-auto my-16 mb-16 bg-white border border-solid border-neutral-200", children: [
       /* @__PURE__ */ jsx("h2", { className: "mb-2 text-4xl font-bold", children: "Welcome" }),
       /* @__PURE__ */ jsx("p", { className: "mb-10 text-sm", children: "Please use the form below to update your profile" }),
-      /* @__PURE__ */ jsxs(Form$1, { method: "post", children: [
-        /* @__PURE__ */ jsxs(Stack, { gap: 7, className: "mb-2", children: [
-          /* @__PURE__ */ jsx(TextInput, { id: "username", name: "username", readOnly: true, labelText: "Username", type: "text", value: user.username, autoComplete: "new-password", required: true }),
+      /* @__PURE__ */ jsxs(Form, { method: "post", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-5 mb-2", children: [
+          /* @__PURE__ */ jsx(Input, { id: "username", name: "username", readOnly: true, labelText: "Username", type: "text", value: user.username, autoComplete: "new-password", required: true }),
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "password",
               name: "password",
@@ -4237,7 +5274,7 @@ function Dashboard$2() {
             }
           ),
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "confirm_password",
               name: "confirm_password",
@@ -4253,7 +5290,7 @@ function Dashboard$2() {
               invalidText: actionData?.fieldErrors?.confirm_password ? actionData?.fieldErrors?.confirm_password : void 0
             }
           ),
-          /* @__PURE__ */ jsx(Button, { size: "sm", renderIcon: ArrowRight, type: "submit", children: "Update" })
+          /* @__PURE__ */ jsx(Button, { size: "sm", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), type: "submit", children: "Update" })
         ] }),
         /* @__PURE__ */ jsx("hr", {}),
         /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
@@ -4262,9 +5299,9 @@ function Dashboard$2() {
             {
               className: "mt-4",
               size: "sm",
-              renderIcon: Add,
+              icon: /* @__PURE__ */ jsx(PlusIcon, {}),
               type: "button",
-              kind: "secondary",
+              variant: "secondary",
               onClick: () => {
                 navigate("/create");
               },
@@ -4277,10 +5314,9 @@ function Dashboard$2() {
               hasIconOnly: true,
               className: "mt-4",
               size: "sm",
-              iconDescription: "Connections",
-              renderIcon: ConnectSource,
+              icon: /* @__PURE__ */ jsx(VersionsIcon, {}),
               type: "button",
-              kind: "tertiary",
+              variant: "ghost",
               onClick: () => {
                 navigate("/connections");
               },
@@ -4290,7 +5326,7 @@ function Dashboard$2() {
         ] })
       ] })
     ] }),
-    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { title: "Error", subtitle: actionData?.formError, closeOnEscape: true, inline: false, onClose: () => setOpen(false) }) })
+    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(ActionableNotification, { variant: "error", title: "Error", subtitle: actionData?.formError, closeOnEscape: true, inline: false, onClose: () => setOpen(false) }) })
   ] });
 }
 
@@ -4333,7 +5369,7 @@ const action$2 = async ({ request }) => {
 };
 function CreateUserRoute() {
   const actionData = useActionData();
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React__default.useState(false);
   useEffect(() => {
     if (actionData && actionData.message) {
       setOpen(true);
@@ -4342,12 +5378,12 @@ function CreateUserRoute() {
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center flex-1 w-full h-screen", children: /* @__PURE__ */ jsxs("div", { className: "w-full max-w-md mx-auto", children: [
       /* @__PURE__ */ jsx(Logo, { className: "h-10 mx-auto" }),
-      /* @__PURE__ */ jsxs(Layer, { className: "w-full p-10 mt-5 border border-solid shadow-lg border-neutral-200 bg-neutral-50", children: [
+      /* @__PURE__ */ jsxs("div", { className: "w-full p-10 mt-5 border border-solid border-neutral-200 bg-neutral-50", children: [
         /* @__PURE__ */ jsx("h3", { className: "block mb-1 text-2xl font-bold", children: "New user account" }),
         /* @__PURE__ */ jsx("small", { className: "block mb-4 text-xs opacity-50 leading-1", children: "This will not create a mongodb database user, it will only create a user to access MongoCarbon admin portal" }),
-        /* @__PURE__ */ jsx(Form, { method: "post", children: /* @__PURE__ */ jsxs(Stack, { gap: 7, children: [
+        /* @__PURE__ */ jsx(Form, { method: "post", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-10", children: [
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "username",
               labelText: "Username",
@@ -4360,7 +5396,7 @@ function CreateUserRoute() {
             }
           ),
           /* @__PURE__ */ jsx(
-            TextInput,
+            Input,
             {
               id: "password",
               labelText: "Password",
@@ -4373,14 +5409,14 @@ function CreateUserRoute() {
               invalidText: actionData?.fieldErrors?.password ? actionData?.fieldErrors?.password : void 0
             }
           ),
-          /* @__PURE__ */ jsx(Button, { size: "sm", type: "submit", renderIcon: Add, children: "Create User" })
+          /* @__PURE__ */ jsx(Button, { size: "sm", type: "submit", icon: /* @__PURE__ */ jsx(PlusIcon, {}), children: "Create User" })
         ] }) })
       ] })
     ] }) }),
     open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(
       ActionableNotification,
       {
-        kind: actionData?.status == "error" ? "error" : "success",
+        variant: actionData?.status == "error" ? "error" : "success",
         title: actionData?.status == "error" ? "Error" : "Info",
         subtitle: actionData?.message,
         closeOnEscape: true,
@@ -4421,7 +5457,7 @@ function Dashboard$1() {
   const loaderData = useLoaderData();
   const info = loaderData?.info;
   const versions = loaderData?.versions;
-  return /* @__PURE__ */ jsx(Grid, { className: "dashboard-page", fullWidth: true, children: /* @__PURE__ */ jsx(Column, { lg: 13, md: 8, sm: 4, children: /* @__PURE__ */ jsx(Grid, { children: /* @__PURE__ */ jsxs(Column, { lg: 16, md: 8, sm: 4, children: [
+  return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { className: "pb-4", children: [
       /* @__PURE__ */ jsx("h4", { className: "text-xl font-medium", children: "Server Information" }),
       /* @__PURE__ */ jsxs("p", { className: "text-sm", children: [
@@ -4431,7 +5467,7 @@ function Dashboard$1() {
     ] }),
     /* @__PURE__ */ jsxs("div", { className: "flex flex-col pb-4 lg:flex-row", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex-1 w-full", children: [
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Hostname" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.host })
@@ -4449,7 +5485,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.localTime })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Current Connections" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.connections.current })
@@ -4467,7 +5503,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.globalLock.currentQueue.readers })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Disk Flushes" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.backgroundFlushing ? info.backgroundFlushing.flushes : "N/A" })
@@ -4477,7 +5513,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.backgroundFlushing ? `${info.backgroundFlushing.total_ms} ms` : "N/A" })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Total Inserts" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.opcounters.insert })
@@ -4489,7 +5525,7 @@ function Dashboard$1() {
         ] }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "flex-1 w-full", children: [
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "MongoDB Version" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.version })
@@ -4503,7 +5539,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: versions.v8 })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Available Connections" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.connections.available })
@@ -4521,7 +5557,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.globalLock.currentQueue.writers })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Last Flush" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.backgroundFlushing ? info.backgroundFlushing.last_finished : "N/A" })
@@ -4531,7 +5567,7 @@ function Dashboard$1() {
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.backgroundFlushing ? `${info.backgroundFlushing.average_ms} ms` : "N/A" })
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx(Table, { size: "lg", useZebraStyles: false, className: "flex-1 w-full mt-4", children: /* @__PURE__ */ jsxs(TableBody, { children: [
+        /* @__PURE__ */ jsx(Table, { className: "flex-1 w-full mt-4 bg-neutral-100 text-md", children: /* @__PURE__ */ jsxs(TableBody, { children: [
           /* @__PURE__ */ jsxs(TableRow, { className: "border-b", children: [
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2 font-semibold", children: "Total Queries" }),
             /* @__PURE__ */ jsx(TableCell, { className: "px-4 py-2", children: info.opcounters.query })
@@ -4543,7 +5579,7 @@ function Dashboard$1() {
         ] }) })
       ] })
     ] })
-  ] }) }) }) });
+  ] });
 }
 
 const route7 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
@@ -4566,7 +5602,7 @@ const route8 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
 }, Symbol.toStringTag, { value: 'Module' }));
 
 const name = "mongocarbon";
-const version = "0.0.6";
+const version = "0.0.7";
 const sideEffects = false;
 const type = "module";
 const scripts = {
@@ -4580,20 +5616,41 @@ const scripts = {
 	lint: "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
 	start: "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 	typecheck: "tsc",
-	preinstall: "echo \"Welcome to MongoCarbon 0.0.4\"",
-	postinstall: "node console/install",
+	preinstall: "echo \"Welcome to Mongo Carbon\"",
+	postinstall: "npm run build && node console/install.js",
 	test: "echo \"Error: No tests are added\""
 };
 const dependencies = {
-	"@carbon/feature-flags": "^0.17.0",
-	"@carbon/grid": "^11.29.0",
-	"@carbon/icons-react": "^11.53.0",
-	"@carbon/react": "^1.71.0",
-	"@carbon/styles": "^1.70.0",
 	"@codeium/react-code-editor": "^1.0.12",
-	"@ibm/telemetry-js": "^1.8.0",
 	"@json2csv/plainjs": "^7.0.6",
+	"@primer/octicons-react": "^19.14.0",
+	"@primer/react": "^37.8.0",
 	"@prisma/client": "^6.0.0",
+	"@radix-ui/react-accordion": "^1.2.2",
+	"@radix-ui/react-alert-dialog": "^1.1.4",
+	"@radix-ui/react-aspect-ratio": "^1.1.1",
+	"@radix-ui/react-avatar": "^1.1.2",
+	"@radix-ui/react-checkbox": "^1.1.3",
+	"@radix-ui/react-collapsible": "^1.1.2",
+	"@radix-ui/react-context-menu": "^2.2.4",
+	"@radix-ui/react-dropdown-menu": "^2.1.4",
+	"@radix-ui/react-hover-card": "^1.1.4",
+	"@radix-ui/react-label": "^2.1.1",
+	"@radix-ui/react-menubar": "^1.1.4",
+	"@radix-ui/react-navigation-menu": "^1.2.3",
+	"@radix-ui/react-popover": "^1.1.4",
+	"@radix-ui/react-progress": "^1.1.1",
+	"@radix-ui/react-radio-group": "^1.2.2",
+	"@radix-ui/react-scroll-area": "^1.2.2",
+	"@radix-ui/react-select": "^2.1.4",
+	"@radix-ui/react-separator": "^1.1.1",
+	"@radix-ui/react-slider": "^1.2.2",
+	"@radix-ui/react-switch": "^1.1.2",
+	"@radix-ui/react-tabs": "^1.1.2",
+	"@radix-ui/react-toast": "^1.2.4",
+	"@radix-ui/react-toggle": "^1.1.1",
+	"@radix-ui/react-toggle-group": "^1.1.1",
+	"@radix-ui/react-tooltip": "^1.1.6",
 	"@remix-run/node": "^2.14.0",
 	"@remix-run/react": "^2.14.0",
 	"@remix-run/serve": "^2.14.0",
@@ -4601,19 +5658,31 @@ const dependencies = {
 	bcryptjs: "^2.4.3",
 	bson: "^6.10.0",
 	chalk: "^5.3.0",
+	"class-variance-authority": "^0.7.1",
+	cmdk: "^1.0.4",
 	commander: "^12.1.0",
 	dotenv: "^16.4.5",
 	"dotenv-cli": "^7.4.4",
+	"embla-carousel-react": "^8.5.1",
+	"input-otp": "^1.4.1",
 	isbot: "^4.1.0",
 	"lodash.isequal": "^4.5.0",
+	"lucide-react": "^0.468.0",
 	mongodb: "^6.10.0",
 	"mongodb-query-parser": "^4.2.6",
+	"next-themes": "^0.4.4",
 	prisma: "^6.0.0",
 	react: "^18.2.0",
+	"react-day-picker": "^9.4.4",
 	"react-dom": "^18.2.0",
+	"react-resizable-panels": "^2.1.7",
+	recharts: "^2.15.0",
 	"scroll-into-view-if-needed": "^3.1.0",
+	sonner: "^1.7.1",
+	"tailwind-merge": "^2.5.5",
 	"textarea-caret": "^3.1.0",
-	validator: "^13.12.0"
+	validator: "^13.12.0",
+	vaul: "^1.1.2"
 };
 const devDependencies = {
 	"@remix-run/dev": "^2.14.0",
@@ -4661,11 +5730,102 @@ const packageJson = {
 };
 
 const Footer = () => {
-  return /* @__PURE__ */ jsx("footer", { className: "bottom-0 w-full px-10 py-1 text-center text-white border-t border-solid bg-neutral-900 border-neutral-200", children: /* @__PURE__ */ jsxs("span", { className: "text-sm", children: [
+  return /* @__PURE__ */ jsx("footer", { className: "fixed bottom-0 right-0 z-50 px-5 py-1 text-center text-white border-t border-solid rounded-tl-xl bg-neutral-900 border-neutral-200", children: /* @__PURE__ */ jsxs("span", { className: "text-sm", children: [
     "© Copyright, 2024 MongoCarbon v",
     packageJson.version
   ] }) });
 };
+
+const SkipToContent = ({ text = "Skip to main content", href = "#main-content" }) => {
+  return /* @__PURE__ */ jsx("a", { href, className: "sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:bg-blue-600 focus:text-white focus:p-4 focus:z-50", children: text });
+};
+
+const defaultElement = "a";
+const HeaderName = ({ as, className, name, to = "/", children, ...rest }) => {
+  const Component = as ?? defaultElement;
+  if (to) {
+    rest.href = to;
+  }
+  return /* @__PURE__ */ jsx(Component, { ...rest, className: cn("text-xl font-bold", className), children: children ? children : /* @__PURE__ */ jsx("h1", { children: name }) });
+};
+const HeaderActions = ({ className, children }) => {
+  return /* @__PURE__ */ jsx("div", { className: cn("flex items-center gap-4", className), children });
+};
+const HeaderAction = React__default.forwardRef(function HeaderAction2({ "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy, children, className: customClassName, onClick, isActive, tooltipAlignment, hasIconOnly = true, ...rest }, ref) {
+  const className = cn("flex items-center gap-4", customClassName);
+  const accessibilityLabel = {
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledBy
+  };
+  return /* @__PURE__ */ jsx(
+    Button,
+    {
+      ...rest,
+      ...accessibilityLabel,
+      variant: "none",
+      size: hasIconOnly ? "icon" : "sm",
+      className,
+      onClick,
+      type: "button",
+      hasIconOnly,
+      tooltip: ariaLabel,
+      tooltipPosition: "bottom",
+      tooltipAlignment,
+      ref,
+      children
+    }
+  );
+});
+const Header = ({ className, children, ...rest }) => {
+  return /* @__PURE__ */ jsx("header", { ...rest, className: cn("flex absolute left-0 w-full items-center justify-between gap-4 px-4 py-2", className), children });
+};
+const HeaderNavigation = ({
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  children,
+  className: customClassName,
+  containerClassName: customContainerClassName,
+  ...rest
+}) => {
+  const className = cn("flex gap-2", customClassName);
+  const containerClassName = cn("", customContainerClassName);
+  return /* @__PURE__ */ jsx("nav", { ...rest, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy, className: containerClassName, children: /* @__PURE__ */ jsx("ul", { className, children }) });
+};
+const menuItemDefaultElement = Button;
+const HeaderMenuItem = React__default.forwardRef(function HeaderMenuItemRenderFunction({ as, className, variant, isActive, isCurrentPage, "aria-current": ariaCurrent, children, role, tabIndex = 0, ...rest }, ref) {
+  if (isCurrentPage) {
+    isActive = isCurrentPage;
+  }
+  const customClassName = cn("flex items-center gap-2", isActive && ariaCurrent !== "page" ? "bg-red-400" : "", className);
+  const Component = as ?? menuItemDefaultElement;
+  return /* @__PURE__ */ jsx(Component, { className: customClassName, size: "sm", variant: variant || "ghost", role, "aria-current": ariaCurrent, ref, tabIndex, ...rest, children: /* @__PURE__ */ jsx("span", { className: `text-ellipsis overflow-hidden`, children }) });
+});
+const HeaderMenuButton = ({
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  className: customClassName,
+  renderMenuIcon,
+  renderCloseIcon,
+  isActive,
+  isCollapsible,
+  ...rest
+}) => {
+  const className = cn(isActive ? "active" : "", !isCollapsible ? "not-collapsible" : "", customClassName);
+  const menuIcon = renderMenuIcon;
+  const closeIcon = renderCloseIcon;
+  return /* @__PURE__ */ jsx("button", { ...rest, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy, className, title: ariaLabel, type: "button", children: isActive ? closeIcon : menuIcon });
+};
+
+const Avatar = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Root, { ref, className: cn("relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full", className), ...props }));
+Avatar.displayName = AvatarPrimitive.Root.displayName;
+const AvatarImage = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Image, { ref, className: cn("aspect-square h-full w-full", className), ...props })
+);
+AvatarImage.displayName = AvatarPrimitive.Image.displayName;
+const AvatarFallback = React.forwardRef(
+  ({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Fallback, { ref, className: cn("flex h-full w-full items-center justify-center rounded-full bg-muted", className), ...props })
+);
+AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName;
 
 const loader$2 = async ({ request }) => {
   try {
@@ -4686,16 +5846,17 @@ const loader$2 = async ({ request }) => {
   }
 };
 function Dashboard() {
+  const { user } = useLoaderData();
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsxs(Header, { "aria-label": "", children: [
       /* @__PURE__ */ jsx(SkipToContent, {}),
-      /* @__PURE__ */ jsx(HeaderName, { as: Link, to: "/", prefix: "", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
-      /* @__PURE__ */ jsxs(HeaderGlobalBar, { children: [
-        /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(UserAvatar, { size: 20 }) }) }),
-        /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(Logout, { size: 20 }) }) })
+      /* @__PURE__ */ jsx(HeaderName, { name: "MongoCarbon", as: "a", to: "/", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
+      /* @__PURE__ */ jsxs(HeaderActions, { children: [
+        /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(Avatar, { className: "bg-primary text-primary-foreground", children: /* @__PURE__ */ jsx(AvatarFallback, { children: user.username.substring(0, 2).toUpperCase() }) }) }) }),
+        /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(SignOutIcon, { size: 20 }) }) })
       ] })
     ] }),
-    /* @__PURE__ */ jsxs(Layer, { level: 1, className: "flex flex-col h-screen overflow-auto bg-neutral-100", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-screen overflow-auto bg-neutral-100", children: [
       /* @__PURE__ */ jsx("div", { className: "flex flex-col items-start justify-start flex-1 w-full mx-auto", children: /* @__PURE__ */ jsx(Outlet, {}) }),
       /* @__PURE__ */ jsx(Footer, {})
     ] })
@@ -4708,19 +5869,48 @@ const route9 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   loader: loader$2
 }, Symbol.toStringTag, { value: 'Module' }));
 
+const ChevronUp = ({ className }) => /* @__PURE__ */ jsx("svg", { className, viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx("path", { d: "M7 14.5L12 9.5L17 14.5", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round" }) });
+const ChevronDown = ({ className }) => /* @__PURE__ */ jsx("svg", { className, viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx("path", { d: "M17 9.5L12 14.5L7 9.5", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round" }) });
+const Download = () => /* @__PURE__ */ jsx("svg", { className: "w-5 h-5", xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 32", width: "32", height: "32", children: /* @__PURE__ */ jsx("path", { d: "M26 24v4H6v-4H4v6h24v-6zM16 22l7-7-1.4-1.4-4.6 4.6V4h-2v14.2l-4.6-4.6L9 15z" }) });
+const Fork = ({ className }) => /* @__PURE__ */ jsxs("svg", { className, viewBox: "0 0 24 24", xmlns: "http://www.w3.org/2000/svg", fill: "currentColor", children: [
+  /* @__PURE__ */ jsx("path", { d: "M4.603 5.347l5.653 7.11a10.347 10.347 0 0 1 .477-1.022L5.397 4.741zM18.244 5H15V4h5v5h-1V5.656l-4.872 5.265A7.91 7.91 0 0 0 12 16.294V21h-1v-4.706a8.908 8.908 0 0 1 2.394-6.051z" }),
+  /* @__PURE__ */ jsx("path", { fill: "none", d: "M0 0h24v24H0z" })
+] });
+const LogoGithub = ({ className }) => /* @__PURE__ */ jsx("svg", { className, xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 32", width: "32", height: "32", children: /* @__PURE__ */ jsx("path", { d: "M16 2.05a14 14 0 0 0-4.42 27.26c.7.13.96-.3.96-.66v-2.34c-3.9.85-4.72-1.88-4.72-1.88a3.72 3.72 0 0 0-1.56-2.05c-1.28-.88.1-.86.1-.86a2.94 2.94 0 0 1 2.14 1.44 3 3 0 0 0 4.1 1.17 3 3 0 0 1 .9-1.88c-3.11-.35-6.38-1.55-6.38-6.9a5.4 5.4 0 0 1 1.44-3.74 5 5 0 0 1 .14-3.68s1.17-.37 3.84 1.43a13.2 13.2 0 0 1 7 0c2.67-1.8 3.84-1.43 3.84-1.43a5 5 0 0 1 .14 3.68 5.4 5.4 0 0 1 1.44 3.74c0 5.36-3.28 6.55-6.4 6.9a3.36 3.36 0 0 1 1 2.61v3.87c0 .36.26.8 1 .66A14 14 0 0 0 16 2.05z" }) });
+const Watch = ({ className }) => /* @__PURE__ */ jsxs("svg", { className, viewBox: "0 0 32 32", xmlns: "http://www.w3.org/2000/svg", fill: "none", children: [
+  /* @__PURE__ */ jsx("path", { stroke: "currentColor", strokeLinejoin: "round", strokeWidth: 1.5, d: "M29 16c0 3-5.82 9-13 9S3 19 3 16s5.82-9 13-9 13 6 13 9z" }),
+  /* @__PURE__ */ jsx("circle", { cx: 16, cy: 16, r: 5, stroke: "currentColor", strokeLinejoin: "round", strokeWidth: 1.5 })
+] });
+const Star = ({ className }) => /* @__PURE__ */ jsx("svg", { className, viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx(
+  "path",
+  {
+    d: "M14.65 8.93274L12.4852 4.30901C12.2923 3.89699 11.7077 3.897 11.5148 4.30902L9.35002 8.93274L4.45559 9.68243C4.02435 9.74848 3.84827 10.2758 4.15292 10.5888L7.71225 14.2461L6.87774 19.3749C6.80571 19.8176 7.27445 20.1487 7.66601 19.9317L12 17.5299L16.334 19.9317C16.7256 20.1487 17.1943 19.8176 17.1223 19.3749L16.2878 14.2461L19.8471 10.5888C20.1517 10.2758 19.9756 9.74848 19.5444 9.68243L14.65 8.93274Z",
+    stroke: "currentColor",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }
+) });
 const GithubButton = ({ repo, version, title }) => {
   const [vendorName, repoName] = repo.split("/");
   const repoUrl = `http://github.com/${vendorName}/${repoName}`;
-  return /* @__PURE__ */ jsx("div", { className: "inline-flex items-center", children: /* @__PURE__ */ jsxs("a", { target: "_blank", className: "inline-flex w-9 overflow-hidden lg:w-auto items-center gap-2 px-2 py-1.5 text-sm border border-solid rounded-sm border-neutral-300 bg-neutral-50", href: repoUrl, children: [
-    /* @__PURE__ */ jsx(LogoGithub, { className: "flex-shrink-0 w-5 h-5" }),
-    " ",
-    title,
-    " ",
-    version ? /* @__PURE__ */ jsxs("b", { children: [
-      "v",
-      version
-    ] }) : null
-  ] }) });
+  return /* @__PURE__ */ jsx("div", { className: "inline-flex items-center", children: /* @__PURE__ */ jsxs(
+    "a",
+    {
+      target: "_blank",
+      className: "inline-flex w-9 overflow-hidden lg:w-auto items-center gap-2 px-2 py-1.5 text-sm border border-solid  border-neutral-300 bg-neutral-50",
+      href: repoUrl,
+      children: [
+        /* @__PURE__ */ jsx(LogoGithub, { className: "flex-shrink-0 w-5 h-5" }),
+        " ",
+        title,
+        " ",
+        version ? /* @__PURE__ */ jsxs("b", { children: [
+          "v",
+          version
+        ] }) : null
+      ]
+    }
+  ) });
 };
 const GitHubWidget = ({ repo, travis, title, version }) => {
   const [repoData, setRepoData] = useState(null);
@@ -4785,35 +5975,57 @@ const GitHubWidget = ({ repo, travis, title, version }) => {
   } else if (!repoData) {
     output = /* @__PURE__ */ jsx("div", { className: "text-red-500", children: "No data" });
   } else {
-    output = /* @__PURE__ */ jsx("div", { className: "overflow-hidden transition-all duration-500 " + (expand ? "max-h-48" : "max-h-0"), children: /* @__PURE__ */ jsxs("div", { className: "p-4 overflow-auto h-full  border border-solid rounded-md border-neutral-300 bg-neutral-50 ", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pb-2 mb-2 border-b border-neutral-300", children: [
-        /* @__PURE__ */ jsxs("h3", { className: "flex gap-0.5 font-semibold text-neutral-700 text-md", children: [
+    output = /* @__PURE__ */ jsx("div", { className: "overflow-hidden transition-all duration-500 " + (expand ? "max-h-48" : "max-h-0"), children: /* @__PURE__ */ jsxs("div", { className: "p-4 overflow-auto h-full  border border-solid  border-neutral-300 bg-neutral-50 ", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 pb-2 mb-2", children: [
+        /* @__PURE__ */ jsxs("h3", { className: "flex gap-0.5 font-semibold text-neutral-600 text-md", children: [
           /* @__PURE__ */ jsx(LogoGithub, { className: "w-6 h-6 mr-1" }),
           /* @__PURE__ */ jsx("a", { className: "text-blue-500", href: vendorUrl, children: vendorName }),
           "/",
           /* @__PURE__ */ jsx("a", { className: "text-blue-500", href: repoUrl, children: repoName })
         ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex space-x-2", children: [
-          /* @__PURE__ */ jsxs("a", { className: "flex items-center gap-1 text-sm text-neutral-600 watchers", href: `${repoUrl}/watchers`, children: [
-            /* @__PURE__ */ jsx(Watch, {}),
-            repoData.watchers
-          ] }),
-          /* @__PURE__ */ jsxs("a", { className: "flex items-center gap-1 text-sm text-neutral-600 forks", href: `${repoUrl}/network/members`, children: [
-            /* @__PURE__ */ jsx(Fork, {}),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+          /* @__PURE__ */ jsxs(
+            "a",
+            {
+              target: "_blank",
+              className: "flex items-center text-sm font-bold transition text-neutral-600 watchers hover:text-blue-600",
+              href: `${repoUrl}/watchers`,
+              children: [
+                /* @__PURE__ */ jsx(Watch, { className: "h-5 mr-1" }),
+                repoData.watchers
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxs("a", { target: "_blank", className: "flex items-center text-sm font-bold transition text-neutral-600 watchers hover:text-blue-600", href: `${repoUrl}/fork`, children: [
+            /* @__PURE__ */ jsx(Fork, { className: "h-5 mr-0.5" }),
             repoData.forks
-          ] })
+          ] }),
+          /* @__PURE__ */ jsxs(
+            "a",
+            {
+              target: "_blank",
+              className: "flex items-center text-sm font-bold transition text-neutral-600 watchers hover:text-blue-600",
+              href: `${repoUrl}/stargazers`,
+              children: [
+                /* @__PURE__ */ jsx(Star, { className: "h-5" }),
+                repoData.stargazers_count
+              ]
+            }
+          )
         ] })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "mb-2 ", children: [
-        /* @__PURE__ */ jsxs("p", { className: "text-sm text-neutral-700", children: [
+        /* @__PURE__ */ jsxs("p", { className: "text-sm text-neutral-600", children: [
           repoData.description,
-          " —",
-          " ",
-          /* @__PURE__ */ jsx("a", { className: "text-blue-500", href: `${repoUrl}#readme`, children: "Read More" })
+          /* @__PURE__ */ jsxs("span", { className: "block", children: [
+            "—",
+            " ",
+            /* @__PURE__ */ jsx("a", { target: "_blank", className: "text-blue-500", href: `${repoUrl}#readme`, children: "Read More" })
+          ] })
         ] }),
-        repoData.homepage && /* @__PURE__ */ jsx("p", { className: "text-sm", children: /* @__PURE__ */ jsx("a", { className: "text-blue-500", href: repoData.homepage, children: repoData.homepage }) })
+        repoData.homepage && /* @__PURE__ */ jsx("p", { className: "text-sm", children: /* @__PURE__ */ jsx("a", { target: "_blank", className: "text-blue-500", href: repoData.homepage, children: repoData.homepage }) })
       ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pt-2 border-t border-neutral-300", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pt-2", children: [
         /* @__PURE__ */ jsxs("p", { className: "text-sm text-neutral-600 updated", children: [
           "Latest commit to the ",
           /* @__PURE__ */ jsx("strong", { children: "master" }),
@@ -4825,7 +6037,7 @@ const GitHubWidget = ({ repo, travis, title, version }) => {
           /* @__PURE__ */ jsx(
             "a",
             {
-              className: "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-solid rounded-sm text-neutral-700 border-neutral-200 hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-200",
+              className: "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-solid  text-neutral-600 border-neutral-200 hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-200",
               href: `${repoUrl}/zipball/master`,
               children: /* @__PURE__ */ jsx(Download, {})
             }
@@ -4835,7 +6047,7 @@ const GitHubWidget = ({ repo, travis, title, version }) => {
     ] }) });
   }
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs("div", { className: "inline-flex mb-4 border border-solid rounded-sm border-neutral-300 bg-neutral-50", children: [
+    /* @__PURE__ */ jsxs("div", { className: "inline-flex mb-4 border border-solid  border-neutral-300 bg-neutral-50", children: [
       /* @__PURE__ */ jsxs("a", { target: "_blank", className: "inline-flex items-center gap-2 px-2 py-1 my-1 text-sm ", href: repoUrl, children: [
         /* @__PURE__ */ jsx(LogoGithub, { className: "w-6 h-6" }),
         " ",
@@ -4855,13 +6067,819 @@ const GitHubWidget = ({ repo, travis, title, version }) => {
           },
           className: "inline-flex items-center gap-2 px-2 py-1 my-1 ml-2 text-sm border-l border-solid border-neutral-200",
           href: repoUrl,
-          children: expand ? /* @__PURE__ */ jsx(ChevronUp, { className: "w-4 h-4" }) : /* @__PURE__ */ jsx(ChevronDown, { className: "w-4 h-4" })
+          children: expand ? /* @__PURE__ */ jsx(ChevronUp, { className: "w-5 h-5" }) : /* @__PURE__ */ jsx(ChevronDown, { className: "w-5 h-5" })
         }
       )
     ] }),
     output
   ] });
 };
+
+const TreeView = ({
+  className,
+  hideLabel = false,
+  label,
+  multiselect = false,
+  onActivate,
+  onSelect,
+  selected,
+  size = "sm",
+  children,
+  ...rest
+}) => {
+  const treeClasses = cn(className, `tree`, size ? `tree--${size}` : "");
+  const treeRootRef = useRef(null);
+  const treeWalker = useRef(treeRootRef?.current);
+  function resetNodeTabIndices() {
+    Array.prototype.forEach.call(treeRootRef?.current?.querySelectorAll('[tabIndex="0"]') ?? [], (item) => {
+      item.tabIndex = -1;
+    });
+  }
+  function handleTreeSelect(event, node = {}) {
+    const nodeId = node.id;
+    if (multiselect && (event.metaKey || event.ctrlKey)) {
+      onSelect?.(event, node);
+    } else {
+      onSelect?.(event, { activeNodeId: nodeId, ...node });
+    }
+  }
+  function handleFocusEvent(event) {
+    if (event.type === "blur") {
+      const { relatedTarget: currentFocusedNode, target: prevFocusedNode } = event;
+      if (treeRootRef?.current?.contains(currentFocusedNode)) {
+        prevFocusedNode.tabIndex = -1;
+      }
+    }
+    if (event.type === "focus") {
+      resetNodeTabIndices();
+      const { relatedTarget: prevFocusedNode, target: currentFocusedNode } = event;
+      if (treeRootRef?.current?.contains(prevFocusedNode)) {
+        prevFocusedNode.tabIndex = -1;
+      }
+      currentFocusedNode.tabIndex = 0;
+    }
+  }
+  let focusTarget = false;
+  const nodesWithProps = children ? React__default.Children.map(children, (_node) => {
+    const node = _node;
+    const sharedNodeProps = {
+      depth: 0,
+      onNodeFocusEvent: handleFocusEvent,
+      onTreeSelect: handleTreeSelect,
+      tabIndex: !node.props.disabled && -1 || void 0
+    };
+    if (!focusTarget && !node.props.disabled) {
+      sharedNodeProps.tabIndex = 0;
+      focusTarget = true;
+    }
+    if (React__default.isValidElement(node)) {
+      return React__default.cloneElement(node, sharedNodeProps);
+    }
+  }) : null;
+  function handleKeyDown(event) {
+    event.stopPropagation();
+    if (matches(event, [ArrowUpKey, ArrowDownKey, HomeKey, EndKey, { code: "KeyA" }])) {
+      event.preventDefault();
+    }
+    if (!treeWalker.current) {
+      return;
+    }
+    treeWalker.current.currentNode = event.target;
+    let nextFocusNode = null;
+    if (match(event, ArrowUpKey)) {
+      nextFocusNode = treeWalker.current.previousNode();
+    }
+    if (match(event, ArrowDownKey)) {
+      nextFocusNode = treeWalker.current.nextNode();
+    }
+    if (matches(event, [HomeKey, EndKey, { code: "KeyA" }])) {
+      const nodeIds = [];
+      if (matches(event, [HomeKey, EndKey])) {
+        if (multiselect && event.shiftKey && event.ctrlKey && treeWalker.current.currentNode instanceof Element && !treeWalker.current.currentNode.getAttribute("aria-disabled") && !treeWalker.current.currentNode.classList.contains(`hidden`)) {
+          nodeIds.push(treeWalker.current.currentNode?.id);
+        }
+        while (match(event, HomeKey) ? treeWalker.current.previousNode() : treeWalker.current.nextNode()) {
+          nextFocusNode = treeWalker.current.currentNode;
+          if (multiselect && event.shiftKey && event.ctrlKey && nextFocusNode instanceof Element && !nextFocusNode.getAttribute("aria-disabled") && !nextFocusNode.classList.contains(`hidden`)) {
+            nodeIds.push(nextFocusNode?.id);
+          }
+        }
+      }
+      if (match(event, { code: "KeyA" }) && event.ctrlKey) {
+        treeWalker.current.currentNode = treeWalker.current.root;
+        while (treeWalker.current.nextNode()) {
+          if (treeWalker.current.currentNode instanceof Element && !treeWalker.current.currentNode.getAttribute("aria-disabled") && !treeWalker.current.currentNode.classList.contains(`hidden`)) {
+            nodeIds.push(treeWalker.current.currentNode?.id);
+          }
+        }
+      }
+    }
+    if (nextFocusNode && nextFocusNode !== event.target) {
+      resetNodeTabIndices();
+      if (nextFocusNode instanceof HTMLElement) {
+        nextFocusNode.tabIndex = 0;
+        nextFocusNode.focus();
+      }
+    }
+    rest?.onKeyDown?.(event);
+  }
+  useEffect(() => {
+    treeWalker.current = treeWalker.current ?? document.createTreeWalker(treeRootRef?.current, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: function(node) {
+        if (!(node instanceof Element)) {
+          return NodeFilter.FILTER_SKIP;
+        }
+        if (node.classList.contains(`disabled`) || node.classList.contains(`hidden`)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (node.matches(`li.tree-node`)) {
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_SKIP;
+      }
+    });
+  }, []);
+  const TreeLabel = () => !hideLabel ? /* @__PURE__ */ jsx("label", { className: `flex bg-red-400`, children: label }) : null;
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx(TreeLabel, {}),
+    /* @__PURE__ */ jsx(
+      "ul",
+      {
+        ...rest,
+        "aria-label": hideLabel ? label : void 0,
+        "aria-multiselectable": multiselect || void 0,
+        className: treeClasses,
+        onKeyDown: handleKeyDown,
+        ref: treeRootRef,
+        role: "tree",
+        children: nodesWithProps
+      }
+    )
+  ] });
+};
+const TreeNode = React__default.forwardRef(
+  ({
+    active,
+    children,
+    className,
+    depth: propDepth,
+    disabled,
+    isExpanded,
+    defaultIsExpanded,
+    label,
+    onNodeFocusEvent,
+    onSelect: onNodeSelect,
+    onToggle,
+    onTreeSelect,
+    icon,
+    value,
+    ...rest
+  }, forwardedRef) => {
+    const depth = propDepth;
+    const currentNode = useRef(null);
+    const currentNodeLabel = useRef(null);
+    const setRefs = (element) => {
+      currentNode.current = element;
+      if (typeof forwardedRef === "function") {
+        forwardedRef(element);
+      } else if (forwardedRef) {
+        forwardedRef.current = element;
+      }
+    };
+    const nodesWithProps = React__default.Children.map(children, (node) => {
+      if (React__default.isValidElement(node)) {
+        return React__default.cloneElement(node, {
+          depth: depth + 1,
+          onTreeSelect,
+          tabIndex: !node.props.disabled && -1 || null
+        });
+      }
+    });
+    const treeNodeClasses = cn(
+      " py-0",
+      className,
+      disabled ? "disabled opacity-50 cursor-not-allowed" : "",
+      icon ? "with-icon" : "",
+      !children ? "hover:bg-tree/10" : "py-0"
+    );
+    const treeLabelClasses = cn(
+      active ? "border-l-4 border-solid border-primary bg-tree" : "border-l-4 border-solid border-transparent hover:bg-tree opacity-70"
+    );
+    const toggleClasses = isExpanded ? "rotate-90" : "";
+    function handleToggleClick(event) {
+      if (disabled) {
+        return;
+      }
+      event.stopPropagation();
+      onToggle?.(event, { isExpanded: !isExpanded, label, value });
+    }
+    function handleClick(event) {
+      event.stopPropagation();
+      if (!disabled) {
+        onTreeSelect?.(event, { label, value });
+        onNodeSelect?.(event, { label, value });
+        rest?.onClick?.(event);
+      }
+    }
+    function handleKeyDown(event) {
+      if (disabled) {
+        return;
+      }
+      if (matches(event, [ArrowLeftKey, ArrowRightKey, EnterKey])) {
+        event.stopPropagation();
+      }
+      if (match(event, ArrowLeftKey)) {
+        const findParentTreeNode = (node) => {
+          if (!node) return null;
+          if (node.classList.contains(`parent-node`)) {
+            return node;
+          }
+          if (node.classList.contains(`tree`)) {
+            return null;
+          }
+          return findParentTreeNode(node.parentElement);
+        };
+        if (children && isExpanded) {
+          onToggle?.(event, { isExpanded: false, label, value });
+        } else {
+          const parentNode = findParentTreeNode(currentNode.current?.parentElement || null);
+          if (parentNode instanceof HTMLElement) {
+            parentNode.focus();
+          }
+        }
+      }
+      if (children && match(event, ArrowRightKey)) {
+        if (isExpanded) {
+          (currentNode.current?.lastChild?.firstChild).focus();
+        } else {
+          onToggle?.(event, { isExpanded: true, label, value });
+        }
+      }
+      if (matches(event, [EnterKey, SpaceKey])) {
+        event.preventDefault();
+        handleClick(event);
+      }
+      rest?.onKeyDown?.(event);
+    }
+    function handleFocusEvent(event) {
+      if (event.type === "blur") {
+        rest?.onBlur?.(event);
+      }
+      if (event.type === "focus") {
+        rest?.onFocus?.(event);
+      }
+      onNodeFocusEvent?.(event);
+    }
+    const treeNodeProps = {
+      ...rest,
+      ["aria-current"]: active || void 0,
+      ["aria-disabled"]: disabled,
+      onBlur: handleFocusEvent,
+      onClick: handleClick,
+      onFocus: handleFocusEvent,
+      onKeyDown: handleKeyDown,
+      role: "treeitem"
+    };
+    let paddingLeft = depth ? `${depth}rem` : void 0;
+    if (!children) {
+      return /* @__PURE__ */ jsx("li", { ...treeNodeProps, className: treeNodeClasses, ref: setRefs, children: /* @__PURE__ */ jsxs("div", { style: { paddingLeft }, className: "flex items-center gap-2 py-2 transition " + treeLabelClasses, ref: currentNodeLabel, children: [
+        icon,
+        label
+      ] }) });
+    }
+    return /* @__PURE__ */ jsxs("li", { style: { paddingLeft }, ...treeNodeProps, className: treeNodeClasses, "aria-expanded": !!isExpanded, ref: setRefs, children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center transition cursor-pointer hover:bg-tree/10 " + treeLabelClasses, ref: currentNodeLabel, children: [
+        /* @__PURE__ */ jsx("span", { className: "w-6 py-2 pl-3 pr-2 mr-2 -ml-2", onClick: handleToggleClick, children: /* @__PURE__ */ jsx(TriangleRightIcon, { className: "h-4 " + toggleClasses }) }),
+        /* @__PURE__ */ jsxs("span", { className: "flex items-center", children: [
+          icon,
+          label
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("ul", { role: "group", className: cn("flex flex-col pt-0 pb-2 py-px", !isExpanded ? "hidden" : ""), children: nodesWithProps })
+    ] });
+  }
+);
+
+const MOBILE_BREAKPOINT = 768;
+function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState(void 0);
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const onChange = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+    mql.addEventListener("change", onChange);
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return !!isMobile;
+}
+
+const Separator = React.forwardRef(
+  ({ className, orientation = "horizontal", decorative = true, ...props }, ref) => /* @__PURE__ */ jsx(
+    SeparatorPrimitive.Root,
+    {
+      ref,
+      decorative,
+      orientation,
+      className: cn(
+        "shrink-0 bg-border",
+        orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
+        className
+      ),
+      ...props
+    }
+  )
+);
+Separator.displayName = SeparatorPrimitive.Root.displayName;
+
+const Sheet = DialogPrimitive.Root;
+const SheetPortal = DialogPrimitive.Portal;
+const SheetOverlay = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Overlay,
+  {
+    className: cn(
+      "fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      className
+    ),
+    ...props,
+    ref
+  }
+));
+SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
+const sheetVariants = cva(
+  "fixed z-50 gap-4 bg-background p-6 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out",
+  {
+    variants: {
+      side: {
+        top: "inset-x-0 top-0 border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+        bottom: "inset-x-0 bottom-0 border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+        left: "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
+        right: "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm"
+      }
+    },
+    defaultVariants: {
+      side: "right"
+    }
+  }
+);
+const SheetContent = React.forwardRef(({ side = "right", className, children, ...props }, ref) => /* @__PURE__ */ jsxs(SheetPortal, { children: [
+  /* @__PURE__ */ jsx(SheetOverlay, {}),
+  /* @__PURE__ */ jsxs(
+    DialogPrimitive.Content,
+    {
+      ref,
+      className: cn(sheetVariants({ side }), className),
+      ...props,
+      children: [
+        /* @__PURE__ */ jsxs(DialogPrimitive.Close, { className: "absolute right-4 top-4  opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary", children: [
+          /* @__PURE__ */ jsx(X, { className: "h-4 w-4" }),
+          /* @__PURE__ */ jsx("span", { className: "sr-only", children: "Close" })
+        ] }),
+        children
+      ]
+    }
+  )
+] }));
+SheetContent.displayName = DialogPrimitive.Content.displayName;
+const SheetTitle = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Title,
+  {
+    ref,
+    className: cn("text-lg font-semibold text-foreground", className),
+    ...props
+  }
+));
+SheetTitle.displayName = DialogPrimitive.Title.displayName;
+const SheetDescription = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  DialogPrimitive.Description,
+  {
+    ref,
+    className: cn("text-sm text-muted-foreground", className),
+    ...props
+  }
+));
+SheetDescription.displayName = DialogPrimitive.Description.displayName;
+
+function Skeleton({
+  className,
+  ...props
+}) {
+  return /* @__PURE__ */ jsx(
+    "div",
+    {
+      className: cn("animate-pulse  bg-primary/10", className),
+      ...props
+    }
+  );
+}
+
+const SIDEBAR_COOKIE_NAME = "sidebar:state";
+const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const SIDEBAR_WIDTH = "24rem";
+const SIDEBAR_WIDTH_MOBILE = "18rem";
+const SIDEBAR_WIDTH_ICON = "3rem";
+const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+const SidebarContext = React.createContext(null);
+function useSidebar() {
+  const context = React.useContext(SidebarContext);
+  if (!context) {
+    throw new Error("useSidebar must be used within a SidebarProvider.");
+  }
+  return context;
+}
+const SidebarProvider = React.forwardRef(({ defaultOpen = true, open: openProp, onOpenChange: setOpenProp, className, style, children, ...props }, ref) => {
+  const isMobile = useIsMobile();
+  const [openMobile, setOpenMobile] = React.useState(false);
+  const [_open, _setOpen] = React.useState(defaultOpen);
+  const open = openProp ?? _open;
+  const setOpen = React.useCallback(
+    (value) => {
+      const openState = typeof value === "function" ? value(open) : value;
+      if (setOpenProp) {
+        setOpenProp(openState);
+      } else {
+        _setOpen(openState);
+      }
+      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+    },
+    [setOpenProp, open]
+  );
+  const toggleSidebar = React.useCallback(() => {
+    return isMobile ? setOpenMobile((open2) => !open2) : setOpen((open2) => !open2);
+  }, [isMobile, setOpen, setOpenMobile]);
+  React.useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleSidebar]);
+  const state = open ? "expanded" : "collapsed";
+  const contextValue = React.useMemo(
+    () => ({
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar
+    }),
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+  );
+  return /* @__PURE__ */ jsx(SidebarContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx(Tooltip, { delayDuration: 0, children: /* @__PURE__ */ jsx(
+    "div",
+    {
+      style: {
+        "--sidebar-width": SIDEBAR_WIDTH,
+        "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+        ...style
+      },
+      className: cn("group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar", className),
+      ref,
+      ...props,
+      children
+    }
+  ) }) });
+});
+SidebarProvider.displayName = "SidebarProvider";
+const Sidebar = React.forwardRef(({ side = "left", variant = "sidebar", collapsible = "offcanvas", className, children, ...props }, ref) => {
+  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  if (collapsible === "none") {
+    return /* @__PURE__ */ jsx("div", { className: cn("flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground", className), ref, ...props, children });
+  }
+  if (isMobile) {
+    return /* @__PURE__ */ jsx(Sheet, { open: openMobile, onOpenChange: setOpenMobile, ...props, children: /* @__PURE__ */ jsx(
+      SheetContent,
+      {
+        "data-sidebar": "sidebar",
+        "data-mobile": "true",
+        className: "w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden",
+        style: {
+          "--sidebar-width": SIDEBAR_WIDTH_MOBILE
+        },
+        side,
+        children: /* @__PURE__ */ jsx("div", { className: "flex flex-col w-full h-full", children })
+      }
+    ) });
+  }
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      ref,
+      className: "hidden group peer md:block text-sidebar-foreground",
+      "data-state": state,
+      "data-collapsible": state === "collapsed" ? collapsible : "",
+      "data-variant": variant,
+      "data-side": side,
+      children: [
+        /* @__PURE__ */ jsx(
+          "div",
+          {
+            className: cn(
+              "duration-200 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-linear",
+              "group-data-[collapsible=offcanvas]:w-0",
+              "group-data-[side=right]:rotate-180",
+              variant === "floating" || variant === "inset" ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]" : "group-data-[collapsible=icon]:w-[--sidebar-width-icon]"
+            )
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "div",
+          {
+            className: cn(
+              "duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
+              side === "left" ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]" : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
+              // Adjust the padding for floating and inset variants.
+              variant === "floating" || variant === "inset" ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]" : "group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l",
+              className
+            ),
+            ...props,
+            children: /* @__PURE__ */ jsx(
+              "div",
+              {
+                "data-sidebar": "sidebar",
+                className: "flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]: group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow",
+                children
+              }
+            )
+          }
+        )
+      ]
+    }
+  );
+});
+Sidebar.displayName = "Sidebar";
+const SidebarTrigger = React.forwardRef(({ className, onClick, ...props }, ref) => {
+  const { toggleSidebar } = useSidebar();
+  return /* @__PURE__ */ jsxs(
+    Button,
+    {
+      ref,
+      "data-sidebar": "trigger",
+      variant: "ghost",
+      size: "icon",
+      className: cn("h-7 w-7", className),
+      onClick: (event) => {
+        onClick?.(event);
+        toggleSidebar();
+      },
+      ...props,
+      children: [
+        /* @__PURE__ */ jsx(PanelLeft, {}),
+        /* @__PURE__ */ jsx("span", { className: "sr-only", children: "Toggle Sidebar" })
+      ]
+    }
+  );
+});
+SidebarTrigger.displayName = "SidebarTrigger";
+const SidebarRail = React.forwardRef(({ className, ...props }, ref) => {
+  const { toggleSidebar } = useSidebar();
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      ref,
+      "data-sidebar": "rail",
+      "aria-label": "Toggle Sidebar",
+      tabIndex: -1,
+      onClick: toggleSidebar,
+      title: "Toggle Sidebar",
+      className: cn(
+        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
+        "[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize",
+        "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
+        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-sidebar",
+        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
+        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarRail.displayName = "SidebarRail";
+const SidebarInset = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx(
+    "main",
+    {
+      ref,
+      className: cn(
+        "relative flex min-h-svh flex-1 flex-col bg-background",
+        "peer-data-[variant=inset]:min-h-[calc(100svh-theme(spacing.4))] md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarInset.displayName = "SidebarInset";
+const SidebarInput = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx(Input, { ref, "data-sidebar": "input", className: cn("h-8 w-full bg-background shadow-none focus-visible:ring-2 focus-visible:ring-sidebar-ring", className), ...props });
+});
+SidebarInput.displayName = "SidebarInput";
+const SidebarHeader = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx("div", { ref, "data-sidebar": "header", className: cn("flex flex-col gap-2 p-2", className), ...props });
+});
+SidebarHeader.displayName = "SidebarHeader";
+const SidebarFooter = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx("div", { ref, "data-sidebar": "footer", className: cn("flex flex-col gap-2 p-2", className), ...props });
+});
+SidebarFooter.displayName = "SidebarFooter";
+const SidebarSeparator = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx(Separator, { ref, "data-sidebar": "separator", className: cn("mx-2 w-auto bg-sidebar-border", className), ...props });
+});
+SidebarSeparator.displayName = "SidebarSeparator";
+const SidebarContent = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx(
+    "div",
+    {
+      ref,
+      "data-sidebar": "content",
+      className: cn("flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className),
+      ...props
+    }
+  );
+});
+SidebarContent.displayName = "SidebarContent";
+const SidebarGroup = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx("div", { ref, "data-sidebar": "group", className: cn("relative flex w-full min-w-0 flex-col p-2", className), ...props });
+});
+SidebarGroup.displayName = "SidebarGroup";
+const SidebarGroupLabel = React.forwardRef(({ className, asChild = false, ...props }, ref) => {
+  const Comp = asChild ? Slot : "div";
+  return /* @__PURE__ */ jsx(
+    Comp,
+    {
+      ref,
+      "data-sidebar": "group-label",
+      className: cn(
+        "duration-200 flex h-8 shrink-0 items-center  px-2 text-xs font-medium text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-[margin,opa] ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarGroupLabel.displayName = "SidebarGroupLabel";
+const SidebarGroupAction = React.forwardRef(({ className, asChild = false, ...props }, ref) => {
+  const Comp = asChild ? Slot : "button";
+  return /* @__PURE__ */ jsx(
+    Comp,
+    {
+      ref,
+      "data-sidebar": "group-action",
+      className: cn(
+        "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center  p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        // Increases the hit area of the button on mobile.
+        "after:absolute after:-inset-2 after:md:hidden",
+        "group-data-[collapsible=icon]:hidden",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarGroupAction.displayName = "SidebarGroupAction";
+const SidebarGroupContent = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("div", { ref, "data-sidebar": "group-content", className: cn("w-full text-md", className), ...props }));
+SidebarGroupContent.displayName = "SidebarGroupContent";
+const SidebarMenu = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("ul", { ref, "data-sidebar": "menu", className: cn("flex w-full min-w-0 flex-col gap-1", className), ...props }));
+SidebarMenu.displayName = "SidebarMenu";
+const SidebarMenuItem = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx("li", { ref, "data-sidebar": "menu-item", className: cn("group/menu-item relative", className), ...props }));
+SidebarMenuItem.displayName = "SidebarMenuItem";
+const sidebarMenuButtonVariants = cva(
+  "peer/menu-button flex w-full items-center gap-2 overflow-hidden  p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  {
+    variants: {
+      variant: {
+        default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        outline: "bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]"
+      },
+      size: {
+        default: "h-8 text-sm",
+        sm: "h-7 text-xs",
+        lg: "h-12 text-sm group-data-[collapsible=icon]:!p-0"
+      }
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default"
+    }
+  }
+);
+const SidebarMenuButton = React.forwardRef(({ asChild = false, isActive = false, variant = "default", size = "default", tooltip, className, ...props }, ref) => {
+  const Comp = asChild ? Slot : "button";
+  const { isMobile, state } = useSidebar();
+  const button = /* @__PURE__ */ jsx(Comp, { ref, "data-sidebar": "menu-button", "data-size": size, "data-active": isActive, className: cn(sidebarMenuButtonVariants({ variant, size }), className), ...props });
+  if (!tooltip) {
+    return button;
+  }
+  if (typeof tooltip === "string") {
+    tooltip = {
+      children: tooltip
+    };
+  }
+  return /* @__PURE__ */ jsx(Tooltip, { side: "right", align: "center", open: state !== "collapsed" || isMobile, ...tooltip, children: button });
+});
+SidebarMenuButton.displayName = "SidebarMenuButton";
+const SidebarMenuAction = React.forwardRef(({ className, asChild = false, showOnHover = false, ...props }, ref) => {
+  const Comp = asChild ? Slot : "button";
+  return /* @__PURE__ */ jsx(
+    Comp,
+    {
+      ref,
+      "data-sidebar": "menu-action",
+      className: cn(
+        "absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center  p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 peer-hover/menu-button:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0",
+        // Increases the hit area of the button on mobile.
+        "after:absolute after:-inset-2 after:md:hidden",
+        "peer-data-[size=sm]/menu-button:top-1",
+        "peer-data-[size=default]/menu-button:top-1.5",
+        "peer-data-[size=lg]/menu-button:top-2.5",
+        "group-data-[collapsible=icon]:hidden",
+        showOnHover && "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:text-sidebar-accent-foreground md:opacity-0",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarMenuAction.displayName = "SidebarMenuAction";
+const SidebarMenuBadge = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  "div",
+  {
+    ref,
+    "data-sidebar": "menu-badge",
+    className: cn(
+      "absolute right-1 flex h-5 min-w-5 items-center justify-center  px-1 text-xs font-medium tabular-nums text-sidebar-foreground select-none pointer-events-none",
+      "peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground",
+      "peer-data-[size=sm]/menu-button:top-1",
+      "peer-data-[size=default]/menu-button:top-1.5",
+      "peer-data-[size=lg]/menu-button:top-2.5",
+      "group-data-[collapsible=icon]:hidden",
+      className
+    ),
+    ...props
+  }
+));
+SidebarMenuBadge.displayName = "SidebarMenuBadge";
+const SidebarMenuSkeleton = React.forwardRef(({ className, showIcon = false, ...props }, ref) => {
+  const width = React.useMemo(() => {
+    return `${Math.floor(Math.random() * 40) + 50}%`;
+  }, []);
+  return /* @__PURE__ */ jsxs("div", { ref, "data-sidebar": "menu-skeleton", className: cn(" h-8 flex gap-2 px-2 items-center", className), ...props, children: [
+    showIcon && /* @__PURE__ */ jsx(Skeleton, { className: " size-4", "data-sidebar": "menu-skeleton-icon" }),
+    /* @__PURE__ */ jsx(
+      Skeleton,
+      {
+        className: "h-4 flex-1 max-w-[--skeleton-width]",
+        "data-sidebar": "menu-skeleton-text",
+        style: {
+          "--skeleton-width": width
+        }
+      }
+    )
+  ] });
+});
+SidebarMenuSkeleton.displayName = "SidebarMenuSkeleton";
+const SidebarMenuSub = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(
+  "ul",
+  {
+    ref,
+    "data-sidebar": "menu-sub",
+    className: cn("mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5", "group-data-[collapsible=icon]:hidden", className),
+    ...props
+  }
+));
+SidebarMenuSub.displayName = "SidebarMenuSub";
+const SidebarMenuSubItem = React.forwardRef(({ ...props }, ref) => /* @__PURE__ */ jsx("li", { ref, ...props }));
+SidebarMenuSubItem.displayName = "SidebarMenuSubItem";
+const SidebarMenuSubButton = React.forwardRef(({ asChild = false, size = "md", isActive, className, ...props }, ref) => {
+  const Comp = asChild ? Slot : "a";
+  return /* @__PURE__ */ jsx(
+    Comp,
+    {
+      ref,
+      "data-sidebar": "menu-sub-button",
+      "data-size": size,
+      "data-active": isActive,
+      className: cn(
+        "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden  px-2 text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
+        "data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
+        size === "sm" && "text-xs",
+        size === "md" && "text-sm",
+        "group-data-[collapsible=icon]:hidden",
+        className
+      ),
+      ...props
+    }
+  );
+});
+SidebarMenuSubButton.displayName = "SidebarMenuSubButton";
 
 const loader$1 = async ({ request, params }) => {
   try {
@@ -4906,7 +6924,7 @@ const loader$1 = async ({ request, params }) => {
 function Layout$1() {
   const loaderData = useLoaderData();
   const navigate = useNavigate();
-  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(true);
   const [isCreateDatabase, setIsCreateDatabase] = useState(false);
   let _currentDb = loaderData.selectedDb ? loaderData.selectedDb : "";
   let _currentCollection = loaderData.selectedCollection ? loaderData.selectedCollection : "";
@@ -4924,7 +6942,6 @@ function Layout$1() {
       });
     }
   }, [loaderData.selectedDb]);
-  let indexTree = [];
   let collectionsElms = [];
   if (loaderData) {
     const databases = Object.keys(loaderData.collections);
@@ -4932,15 +6949,13 @@ function Layout$1() {
       return a > b ? 1 : -1;
     });
     collectionsElms = databases.map((database, indexDb) => {
-      if (database == current.db) {
-        indexTree = [indexDb.toString()];
-      }
       const collections = loaderData.collections[database].sort((a, b) => {
         return a.name > b.name ? 1 : -1;
       });
       return /* @__PURE__ */ jsx(
-        TreeNode$1,
+        TreeNode,
         {
+          active: database == current.db,
           isExpanded: database == current.db,
           onSelect: () => {
             setCurrent({
@@ -4949,17 +6964,26 @@ function Layout$1() {
             });
             navigate(`/database/${database}`);
           },
-          id: indexDb.toString(),
           label: database,
+          onToggle: (e, node) => {
+            const isExpanded = node?.isExpanded;
+            setCurrent(
+              isExpanded ? {
+                db: database,
+                collection: ""
+              } : {
+                db: "",
+                collection: ""
+              }
+            );
+            console.log("Toggle", node);
+          },
           tabIndex: 0,
           children: collections.map((collection, indexCol) => {
-            if (database == current.db && collection.name == current.collection) {
-              indexTree.push(indexCol.toString());
-            }
             return /* @__PURE__ */ jsx(
-              TreeNode$1,
+              TreeNode,
               {
-                id: `${indexDb}-${indexCol}`,
+                active: database == current.db && collection.name == current.collection,
                 onSelect: () => {
                   setCurrent({
                     db: database,
@@ -4967,10 +6991,17 @@ function Layout$1() {
                   });
                   navigate(`/database/${database}/${collection.name}`);
                 },
-                renderIcon: DataTable,
-                label: collection.name
+                icon: /* @__PURE__ */ jsx(DatabaseIcon, {}),
+                label: collection.name,
+                onToggle: (e, node) => {
+                  setCurrent({
+                    db: database,
+                    collection: collection.name
+                  });
+                  console.log("Toggle", node);
+                }
               },
-              collection.name
+              `${database}-${collection.name}`
             );
           })
         },
@@ -4983,55 +7014,51 @@ function Layout$1() {
   };
   const { pathname } = useLocation();
   const treeView = /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-4 py-2", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-4 py-2 bg-neutral-100", children: [
       /* @__PURE__ */ jsx("span", { className: "block text-xs uppercase opacity-50", children: "Databases" }),
-      /* @__PURE__ */ jsx(Link, { className: "text-xs uppercase opacity-50 hover:underline hover:opacity-100", to: "/database", children: /* @__PURE__ */ jsx(DataView, {}) })
+      /* @__PURE__ */ jsx(Link, { className: "text-xs uppercase opacity-50 hover:underline hover:opacity-100", to: "/database", children: /* @__PURE__ */ jsx(EyeIcon, {}) })
     ] }),
-    /* @__PURE__ */ jsx(TreeView, { size: "sm", multiselect: false, selected: [indexTree[0], indexTree.join("-")], active: indexTree[0], hideLabel: true, label: "Databases", "aria-expanded": true, children: collectionsElms })
+    /* @__PURE__ */ jsx(TreeView, { size: "sm", multiselect: false, hideLabel: true, label: "Databases", "aria-expanded": true, className: "bg-neutral-100", children: collectionsElms })
   ] });
   return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs(Header, { "aria-label": "", children: [
-      /* @__PURE__ */ jsx(SkipToContent, {}),
-      /* @__PURE__ */ jsx(
-        HeaderMenuButton,
-        {
-          "aria-label": "Open menu",
-          onClick: () => {
-            setIsSideNavExpanded(!isSideNavExpanded);
-          },
-          isActive: isSideNavExpanded
-        }
-      ),
-      /* @__PURE__ */ jsx(HeaderName, { as: Link, to: "/", prefix: "", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
-      /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "Connections", children: /* @__PURE__ */ jsx(HeaderMenuItem, { as: "div", className: "flex items-center mr-4", children: /* @__PURE__ */ jsx(SwitchConnection, { current: loaderData.connection, connections: loaderData.connections }) }) }),
-      /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "New Database", children: /* @__PURE__ */ jsx(HeaderMenuItem, { onClick: onCreateDatabase, children: "New Database" }) }),
-      /* @__PURE__ */ jsxs(HeaderGlobalBar, { children: [
-        /* @__PURE__ */ jsx(GithubButton, { repo: "n-for-all/mongocarbon", version: packageJson.version, title: "MongoCarbon" }),
-        /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(UserAvatar, { size: 20 }) }) }),
-        /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(Logout, { size: 20 }) }) })
-      ] }),
-      /* @__PURE__ */ jsx(
-        SideNav,
-        {
-          "aria-label": "Side navigation",
-          expanded: isSideNavExpanded,
-          isPersistent: false,
-          onSideNavBlur: () => {
-            setIsSideNavExpanded(false);
-          },
-          children: /* @__PURE__ */ jsx(SideNavItems, { children: /* @__PURE__ */ jsxs(HeaderSideNavItems, { children: [
-            /* @__PURE__ */ jsx(HeaderMenuItem, { as: "div", className: "flex items-center mr-4", children: /* @__PURE__ */ jsx(SwitchConnection, { current: loaderData.connection, connections: loaderData.connections }) }),
-            /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "New Database", children: /* @__PURE__ */ jsx(HeaderMenuItem, { onClick: onCreateDatabase, children: "New Database" }) }),
-            /* @__PURE__ */ jsx("div", { className: "relative top-0 left-0 w-full h-full overflow-auto", children: treeView })
-          ] }) })
-        }
-      )
+    /* @__PURE__ */ jsxs(SidebarProvider, { defaultOpen: true, open: isSideNavExpanded, children: [
+      /* @__PURE__ */ jsx(Sidebar, { children: /* @__PURE__ */ jsx(SidebarContent, { children: /* @__PURE__ */ jsx(SidebarGroup, { children: /* @__PURE__ */ jsxs(SidebarGroupContent, { children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex justify-between mb-4", children: [
+          /* @__PURE__ */ jsx(HeaderMenuItem, { as: "div", className: "flex items-center mr-4", children: /* @__PURE__ */ jsx(SwitchConnection, { current: loaderData.connection, connections: loaderData.connections }) }),
+          /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "New Database", children: /* @__PURE__ */ jsx(HeaderMenuItem, { variant: "outline", icon: /* @__PURE__ */ jsx(PlusIcon, {}), onClick: onCreateDatabase, children: "New Database" }) })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "relative top-0 left-0 w-full h-full overflow-auto", children: treeView })
+      ] }) }) }) }),
+      /* @__PURE__ */ jsxs("div", { className: "relative w-full overflow-hidden transition", children: [
+        /* @__PURE__ */ jsxs(Header, { className: "z-50 bg-white shadow", "aria-label": "Header", children: [
+          /* @__PURE__ */ jsx(SkipToContent, {}),
+          /* @__PURE__ */ jsxs(HeaderActions, { children: [
+            /* @__PURE__ */ jsx(
+              HeaderMenuButton,
+              {
+                "aria-label": "Open menu",
+                renderMenuIcon: /* @__PURE__ */ jsx(ThreeBarsIcon, {}),
+                renderCloseIcon: /* @__PURE__ */ jsx(XIcon, {}),
+                onClick: () => {
+                  setIsSideNavExpanded(!isSideNavExpanded);
+                },
+                isActive: isSideNavExpanded
+              }
+            ),
+            /* @__PURE__ */ jsx(HeaderName, { as: "a", to: "/", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
+            /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "Connections", children: /* @__PURE__ */ jsx(HeaderMenuItem, { as: "div", className: "flex items-center mr-4", children: /* @__PURE__ */ jsx(SwitchConnection, { current: loaderData.connection, connections: loaderData.connections }) }) }),
+            /* @__PURE__ */ jsx(HeaderNavigation, { "aria-label": "New Database", children: /* @__PURE__ */ jsx(HeaderMenuItem, { onClick: onCreateDatabase, children: "New Database" }) })
+          ] }),
+          /* @__PURE__ */ jsxs(HeaderActions, { children: [
+            /* @__PURE__ */ jsx(GithubButton, { repo: "n-for-all/mongocarbon", version: packageJson.version, title: "MongoCarbon" }),
+            /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(Avatar, { className: "bg-primary text-primary-foreground", children: /* @__PURE__ */ jsx(AvatarFallback, { children: loaderData.user.username.substring(0, 2).toUpperCase() }) }) }) }),
+            /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(SignOutIcon, { size: 20 }) }) })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "h-screen overflow-auto", children: /* @__PURE__ */ jsx("div", { className: "pt-12 pb-12 pl-0 pr-0", children: /* @__PURE__ */ jsx("div", { className: "h-full pt-5 mr-0 ", children: /* @__PURE__ */ jsx("div", { className: "px-4 lg:px-8", children: /* @__PURE__ */ jsx(Outlet, {}, pathname + "-content") }) }) }) }),
+        /* @__PURE__ */ jsx(Footer, {})
+      ] })
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "h-screen pt-12", children: /* @__PURE__ */ jsxs(Grid, { className: "h-full pl-0 pr-0", fullWidth: true, children: [
-      !isSideNavExpanded && /* @__PURE__ */ jsx(Column, { lg: 3, md: 8, sm: 4, className: "relative h-full ml-0 border-r border-solid border-neutral-100", children: /* @__PURE__ */ jsx("div", { className: "absolute top-0 left-0 w-full h-full overflow-auto", children: treeView }) }),
-      /* @__PURE__ */ jsx(Column, { lg: 13, md: 8, sm: 4, className: "h-full pt-5 mr-0 overflow-auto", children: /* @__PURE__ */ jsx("div", { className: "pr-4 lg:pr-8", children: /* @__PURE__ */ jsx(Outlet, {}, pathname + "-content") }) })
-    ] }) }),
-    /* @__PURE__ */ jsx(Footer, {}),
     /* @__PURE__ */ jsx(
       DatabaseAddModal,
       {
@@ -5080,24 +7107,26 @@ function Layout() {
         HeaderMenuButton,
         {
           "aria-label": "Open menu",
+          renderMenuIcon: /* @__PURE__ */ jsx(ThreeBarsIcon, {}),
+          renderCloseIcon: /* @__PURE__ */ jsx(XIcon, {}),
           onClick: () => {
             setIsSideNavExpanded(!isSideNavExpanded);
           },
           isActive: isSideNavExpanded
         }
       ),
-      /* @__PURE__ */ jsx(HeaderName, { as: Link, to: "/", prefix: "", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
-      /* @__PURE__ */ jsxs(HeaderGlobalBar, { children: [
-        /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(UserAvatar, { size: 20 }) }) }),
-        /* @__PURE__ */ jsx(HeaderGlobalAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(Logout, { size: 20 }) }) })
+      /* @__PURE__ */ jsx(HeaderName, { as: "a", to: "/", children: /* @__PURE__ */ jsx(Logo, { className: "h-5" }) }),
+      /* @__PURE__ */ jsxs(HeaderActions, { children: [
+        /* @__PURE__ */ jsx(Link, { to: "/profile", children: /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "User Profile", children: /* @__PURE__ */ jsx(Avatar, { className: "bg-primary text-primary-foreground", children: /* @__PURE__ */ jsx(AvatarFallback, { children: loaderData.user.username.substring(0, 2).toUpperCase() }) }) }) }),
+        /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(SignOutIcon, { size: 20 }) }) })
       ] })
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "h-screen pt-12", children: /* @__PURE__ */ jsx(Grid, { className: "max-w-xl pl-0 pr-0", fullWidth: true, children: /* @__PURE__ */ jsx(Column, { lg: 13, md: 8, sm: 4, className: "h-full pt-5 mr-0 overflow-auto", children: /* @__PURE__ */ jsxs("div", { className: "p-4 border border-red-300 border-solid", children: [
+    /* @__PURE__ */ jsx("div", { className: "h-screen pt-12", children: /* @__PURE__ */ jsx("div", { className: "max-w-xl pl-0 pr-0", children: /* @__PURE__ */ jsx("div", { className: "h-full pt-5 mr-0 overflow-auto", children: /* @__PURE__ */ jsxs("div", { className: "p-4 border border-red-300 border-solid", children: [
       /* @__PURE__ */ jsx("h2", { className: "mb-5 text-2xl font-bold text-red-600", children: "Error" }),
       /* @__PURE__ */ jsx("p", { className: "mb-4", children: loaderData?.message }),
       /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "secondary", as: Link, to: "/", renderIcon: ArrowRight, children: "Dashboard" }),
-        /* @__PURE__ */ jsx(Button, { size: "sm", kind: "tertiary", as: Link, to: "/connections", renderIcon: ArrowRight, children: "Connections" })
+        /* @__PURE__ */ jsx(Button, { size: "sm", variant: "secondary", as: "a", to: "/", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), children: "Dashboard" }),
+        /* @__PURE__ */ jsx(Button, { size: "sm", variant: "ghost", as: "a", to: "/connections", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), children: "Connections" })
       ] })
     ] }) }) }) }),
     /* @__PURE__ */ jsx(Footer, {})
@@ -5149,70 +7178,54 @@ const action = async ({ request }) => {
 };
 function LoginRoute() {
   const actionData = useActionData();
-  const [open, setOpen] = React.useState(false);
+  const { toast } = useToast();
   useEffect(() => {
     if (actionData && actionData.message) {
-      setOpen(true);
+      toast({
+        variant: "error",
+        title: actionData?.status == "error" ? "Error" : "Success",
+        description: actionData?.message,
+        action: /* @__PURE__ */ jsx(ToastAction, { altText: "Close", children: "Close" })
+      });
     }
   }, [actionData]);
-  return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-screen", children: /* @__PURE__ */ jsxs("div", { className: "w-full max-w-md mx-auto", children: [
-      /* @__PURE__ */ jsx(Logo, { className: "h-10 mx-auto" }),
-      /* @__PURE__ */ jsxs(Layer, { className: "w-full p-10 mt-5 bg-white border border-solid shadow-lg border-neutral-200", children: [
-        /* @__PURE__ */ jsx("h3", { className: "block mb-1 text-3xl font-bold", children: "Login" }),
-        /* @__PURE__ */ jsx("small", { className: "block mb-6 text-xs opacity-50 leading-1", children: "Please enter your username and password below:" }),
-        /* @__PURE__ */ jsx(Form, { method: "post", children: /* @__PURE__ */ jsxs(Stack, { gap: 7, children: [
-          /* @__PURE__ */ jsx(
-            TextInput,
-            {
-              id: "username",
-              name: "username",
-              labelText: "Username",
-              type: "text",
-              autoComplete: "new-password",
-              required: true,
-              invalid: Boolean(actionData?.errors?.username) || void 0,
-              invalidText: actionData?.errors?.username ? actionData?.errors?.username : void 0
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            TextInput,
-            {
-              id: "password",
-              name: "password",
-              labelText: "Password",
-              type: "password",
-              required: true,
-              autoComplete: "new-password",
-              invalid: Boolean(actionData?.errors?.password) || void 0,
-              invalidText: actionData?.errors?.password ? actionData?.errors?.password : void 0
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            Button,
-            {
-              size: "sm",
-              renderIcon: (props) => /* @__PURE__ */ jsx(ArrowRight, { size: 20, ...props }),
-              type: "submit",
-              children: "Login"
-            }
-          )
-        ] }) })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "flex flex-col items-center justify-center mt-4", children: /* @__PURE__ */ jsx(GitHubWidget, { repo: "n-for-all/mongocarbon", version: packageJson.version, title: "MongoCarbon" }) })
-    ] }) }),
-    open && /* @__PURE__ */ jsx("div", { className: "fixed -translate-x-1/2 left-1/2 bottom-10", children: /* @__PURE__ */ jsx(
-      ActionableNotification,
-      {
-        kind: actionData?.status == "error" ? "error" : "success",
-        title: actionData?.status == "error" ? "Error" : "Info",
-        subtitle: actionData?.message,
-        closeOnEscape: true,
-        inline: false,
-        onClose: () => setOpen(false)
-      }
-    ) })
-  ] });
+  return /* @__PURE__ */ jsx(Fragment, { children: /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-screen", children: /* @__PURE__ */ jsxs("div", { className: "w-full max-w-md mx-auto", children: [
+    /* @__PURE__ */ jsx(Logo, { className: "h-10 mx-auto" }),
+    /* @__PURE__ */ jsxs("div", { className: "w-full p-10 mt-5 border border-solid bg-neutral-50 border-neutral-100", children: [
+      /* @__PURE__ */ jsx("h3", { className: "block mb-1 text-3xl font-bold", children: "Login" }),
+      /* @__PURE__ */ jsx("small", { className: "block mb-6 text-xs opacity-50 leading-1", children: "Please enter your username and password below:" }),
+      /* @__PURE__ */ jsx(Form, { method: "post", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-10", children: [
+        /* @__PURE__ */ jsx(
+          Input,
+          {
+            id: "username",
+            name: "username",
+            labelText: "Username",
+            type: "text",
+            autoComplete: "new-password",
+            required: true,
+            invalid: Boolean(actionData?.errors?.username) || void 0,
+            invalidText: actionData?.errors?.username ? actionData?.errors?.username : void 0
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          Input,
+          {
+            id: "password",
+            name: "password",
+            labelText: "Password",
+            type: "password",
+            required: true,
+            autoComplete: "new-password",
+            invalid: Boolean(actionData?.errors?.password) || void 0,
+            invalidText: actionData?.errors?.password ? actionData?.errors?.password : void 0
+          }
+        ),
+        /* @__PURE__ */ jsx(Button, { iconPosition: "right", size: "sm", icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}), type: "submit", children: "Login" })
+      ] }) })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex flex-col items-center justify-center mt-4", children: /* @__PURE__ */ jsx(GitHubWidget, { repo: "n-for-all/mongocarbon", version: packageJson.version, title: "MongoCarbon" }) })
+  ] }) }) });
 }
 
 const route12 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
@@ -5221,7 +7234,7 @@ const route12 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   default: LoginRoute
 }, Symbol.toStringTag, { value: 'Module' }));
 
-const serverManifest = {'entry':{'module':'/assets/entry.client-CiKnG_8o.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-C_ObZ1CP.js','imports':['/assets/components-Cj7Yk1Hh.js'],'css':['/assets/root-nUEo1Ulo.css']},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-oCGZi3vN.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/TableRow-Zi2gF0TG.js','/assets/collection-D6bPwBCG.js','/assets/database-Dl88dlG2.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-4-DNu0uQyD.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-CFSJQL9_.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/functions-B7s41jYM.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-B37bIhWk.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/bucket-3-B5cXRAyd.js','/assets/TableRow-Zi2gF0TG.js','/assets/bucket-4-DNu0uQyD.js','/assets/index-DCm1eCXF.js','/assets/bucket-17-BFRBnihc.js','/assets/wrapComponent-DVKhoVmh.js','/assets/collection-D6bPwBCG.js','/assets/bucket-10-BakHwRxf.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-C4SxA8eV.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/Notification-t-CAZq57.js','/assets/Search-BNe1a6wo.js','/assets/functions-B7s41jYM.js','/assets/database-Dl88dlG2.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-Brm3bB66.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/AccordionItem-DNYUtNot.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/index-BgfNTfNX.js','/assets/connection-DdvKsJfI.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-Ceng-Gaf.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-BTgmFHlR.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-3-B5cXRAyd.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-gz7svUly.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/TableRow-Zi2gF0TG.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-D0ECua74.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-UFt_NXRy.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/footer-Di0okDi_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/Button-Bl4KegFP.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-BHlkEMfo.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-BiiY_KjC.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/package-BHlkEMfo.js','/assets/index-_rCr0AGk.js','/assets/Column-BatEsPZP.js','/assets/useMatchMedia-DCVgUbq7.js','/assets/Button-Bl4KegFP.js','/assets/TextInput-CKh2Yhf_.js','/assets/footer-Di0okDi_.js','/assets/HeaderMenuButton-CAm8d-jH.js','/assets/connection-DdvKsJfI.js','/assets/database-Dl88dlG2.js','/assets/github_widget-X-pkoqDF.js','/assets/logo-BYODAW8L.js','/assets/bucket-4-DNu0uQyD.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/wrapComponent-DVKhoVmh.js','/assets/bucket-3-B5cXRAyd.js','/assets/index-DCm1eCXF.js','/assets/Modal-K69mcxHf.js','/assets/index-BgfNTfNX.js','/assets/index-B37bIhWk.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-BMPD2SHa.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Column-BatEsPZP.js','/assets/footer-Di0okDi_.js','/assets/HeaderMenuButton-CAm8d-jH.js','/assets/logo-BYODAW8L.js','/assets/bucket-17-BFRBnihc.js','/assets/bucket-10-BakHwRxf.js','/assets/bucket-3-B5cXRAyd.js','/assets/wrapComponent-DVKhoVmh.js','/assets/package-BHlkEMfo.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-BmnM70Yh.js','imports':['/assets/components-Cj7Yk1Hh.js','/assets/index-_rCr0AGk.js','/assets/Button-Bl4KegFP.js','/assets/Notification-t-CAZq57.js','/assets/TextInput-CKh2Yhf_.js','/assets/index-BgfNTfNX.js','/assets/logo-BYODAW8L.js','/assets/github_widget-X-pkoqDF.js','/assets/package-BHlkEMfo.js','/assets/bucket-3-B5cXRAyd.js','/assets/bucket-10-BakHwRxf.js'],'css':[]}},'url':'/assets/manifest-ab38ca53.js','version':'ab38ca53'};
+const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','imports':['/assets/components-BPOIHgDc.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-DYAgCu9X.js','imports':['/assets/components-BPOIHgDc.js','/assets/x-OohQberg.js','/assets/toast-hIcI356p.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js'],'css':['/assets/root-sL7v7eY3.css']},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-H-1x1CL0.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/collection-CQRtENl6.js','/assets/database-D9MPVr0e.js','/assets/functions-DMKVu1r-.js','/assets/accordion-Cy3lx65E.js','/assets/alert-Do9tp9-j.js','/assets/input-ChpOE9Lf.js','/assets/select-Cem4k-Od.js','/assets/table-CX2GO18n.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/x-OohQberg.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-Dmn7Omo_.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/functions-DMKVu1r-.js','/assets/collection-CQRtENl6.js','/assets/accordion-Cy3lx65E.js','/assets/table-CX2GO18n.js','/assets/index-CZUknZXM.js','/assets/x-OohQberg.js','/assets/select-Cem4k-Od.js','/assets/utils-DcAaEMf9.js','/assets/input-ChpOE9Lf.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-CRcUl7DD.js','imports':['/assets/components-BPOIHgDc.js','/assets/functions-DMKVu1r-.js','/assets/button-ZrFu6W_T.js','/assets/database-D9MPVr0e.js','/assets/select-Cem4k-Od.js','/assets/alert-Do9tp9-j.js','/assets/input-ChpOE9Lf.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/x-OohQberg.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-DFD7X86d.js','imports':['/assets/components-BPOIHgDc.js','/assets/connection-DQWmmeEw.js','/assets/logo-COugf1Vw.js','/assets/accordion-Cy3lx65E.js','/assets/button-ZrFu6W_T.js','/assets/actionable-notification-DDLqphrE.js','/assets/x-OohQberg.js','/assets/index-CZUknZXM.js','/assets/select-Cem4k-Od.js','/assets/utils-DcAaEMf9.js','/assets/input-ChpOE9Lf.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-63As5LFj.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/actionable-notification-DDLqphrE.js','/assets/input-ChpOE9Lf.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-BRASXI-l.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/logo-COugf1Vw.js','/assets/input-ChpOE9Lf.js','/assets/actionable-notification-DDLqphrE.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-AIFGYrER.js','imports':['/assets/components-BPOIHgDc.js','/assets/table-CX2GO18n.js','/assets/utils-DcAaEMf9.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-D0ECua74.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-DtrqugTP.js','imports':['/assets/components-BPOIHgDc.js','/assets/avatar-DdkXt1Wa.js','/assets/logo-COugf1Vw.js','/assets/button-ZrFu6W_T.js','/assets/package-BtyHozD1.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-Bt1gRWw-.js','imports':['/assets/components-BPOIHgDc.js','/assets/package-BtyHozD1.js','/assets/button-ZrFu6W_T.js','/assets/avatar-DdkXt1Wa.js','/assets/connection-DQWmmeEw.js','/assets/database-D9MPVr0e.js','/assets/github_widget-R1gwNBdG.js','/assets/logo-COugf1Vw.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js','/assets/input-ChpOE9Lf.js','/assets/select-Cem4k-Od.js','/assets/x-OohQberg.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-2d9OmjR3.js','imports':['/assets/components-BPOIHgDc.js','/assets/avatar-DdkXt1Wa.js','/assets/logo-COugf1Vw.js','/assets/button-ZrFu6W_T.js','/assets/package-BtyHozD1.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-DTEqUQMw.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/logo-COugf1Vw.js','/assets/input-ChpOE9Lf.js','/assets/x-OohQberg.js','/assets/toast-hIcI356p.js','/assets/github_widget-R1gwNBdG.js','/assets/package-BtyHozD1.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js'],'css':[]}},'url':'/assets/manifest-32adbcfa.js','version':'32adbcfa'};
 
 /**
        * `mode` is only relevant for the old Remix compiler but
@@ -5230,7 +7243,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-CiKnG_8o.js','im
       const mode = "production";
       const assetsBuildDirectory = "build/client";
       const basename = "/";
-      const future = {"v3_fetcherPersist":true,"v3_relativeSplatPath":true,"v3_throwAbortReason":true,"v3_singleFetch":true,"v3_lazyRouteDiscovery":true,"unstable_optimizeDeps":false,"unstable_routeConfig":false};
+      const future = {"v3_fetcherPersist":true,"v3_relativeSplatPath":true,"v3_throwAbortReason":true,"v3_routeConfig":false,"v3_singleFetch":true,"v3_lazyRouteDiscovery":true,"unstable_optimizeDeps":false};
       const isSpaMode = false;
       const publicPath = "/";
       const entry = { module: entryServer };
