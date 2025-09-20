@@ -3,6 +3,8 @@ import { Timestamp } from "mongodb";
 import { EJSON, ObjectId } from "bson";
 import { Binary } from "mongodb";
 import * as crypto from "crypto";
+import jwt from "jsonwebtoken";
+import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 
 export const convertMongoTimestamp = (timestamp: Timestamp | { $timestamp: string } | undefined) => {
     if (timestamp instanceof Timestamp) {
@@ -101,3 +103,47 @@ export const generateGravatarUrl = (
     // Combine URL with parameters
     return params.length ? `${baseUrl}?${params.join("&")}` : baseUrl;
 };
+
+export function isCursor(obj) {
+    return obj && typeof obj.next === "function" && typeof obj.toArray === "function";
+}
+
+export function createJWTToken(payload: object, options: object = {}) {
+    const secret = process.env.JWT_SECRET;
+    return jwt.sign(payload, secret, { algorithm: "HS256", ...options });
+}
+
+// Encrypt data with a secret key using AES-256-GCM
+export function generateApiKey(data) {
+    if (!process.env.API_KEY_SECRET) {
+        throw new Error("API_KEY_SECRET is not set in the .env file");
+    }
+    const iv = randomBytes(12);
+    const key = Buffer.from(process.env.API_KEY_SECRET, "utf-8").slice(0, 32); // 256-bit key
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+
+    const jsonData = JSON.stringify(data);
+    const encrypted = Buffer.concat([cipher.update(jsonData, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+
+    // Combine iv + tag + encrypted for transmission
+    // Encode all to base64url for safe key format
+    return Buffer.concat([iv, tag, encrypted]).toString("base64url");
+}
+
+export function decryptApiKey(encryptedBase64) {
+    if (!process.env.API_KEY_SECRET) {
+        throw new Error("API_KEY_SECRET is not set in the .env file");
+    }
+    const data = Buffer.from(encryptedBase64, "base64url");
+    const iv = data.subarray(0, 12);
+    const tag = data.subarray(12, 28);
+    const encrypted = data.subarray(28);
+
+    const key = Buffer.from(process.env.API_KEY_SECRET, "utf-8").subarray(0, 32);
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return JSON.parse(decrypted.toString("utf-8"));
+}

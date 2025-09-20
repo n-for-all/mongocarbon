@@ -8,15 +8,16 @@ import * as React from 'react';
 import React__default, { useState, useEffect, useRef } from 'react';
 import * as ToastPrimitives from '@radix-ui/react-toast';
 import { cva } from 'class-variance-authority';
-import { X, ChevronDown as ChevronDown$1, ChevronUp as ChevronUp$1, Check, PanelLeft } from 'lucide-react';
+import { X, Loader2, ChevronDown as ChevronDown$1, ChevronUp as ChevronUp$1, Check, CircleX, PanelLeft } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import path from 'path';
 import { SearchIcon, XIcon, CheckIcon, CopyIcon, PlusIcon, TrashIcon, SortAscIcon, SortDescIcon, DatabaseIcon, ArrowRightIcon, PencilIcon, ChevronDownIcon, ChevronRightIcon, TriangleLeftIcon, TriangleRightIcon, ListUnorderedIcon, ServerIcon, VersionsIcon, SignOutIcon, ThreeBarsIcon, EyeIcon } from '@primer/octicons-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Slot } from '@radix-ui/react-slot';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as dotenv from 'dotenv';
-import path from 'node:path';
+import path$1 from 'node:path';
 import appRoot from 'app-root-path';
 import mongodb, { Timestamp, Binary } from 'mongodb';
 import validator from 'validator';
@@ -459,6 +460,22 @@ const route0 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   links
 }, Symbol.toStringTag, { value: 'Module' }));
 
+const loader$a = async ({ request }) => {
+  const projectRoot = path.resolve();
+  const jsonData = {
+    workspace: {
+      root: projectRoot,
+      uuid: "mongo-carbon"
+    }
+  };
+  return Response.json(jsonData);
+};
+
+const route1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  loader: loader$a
+}, Symbol.toStringTag, { value: 'Module' }));
+
 const NativeInput = React.forwardRef(({ className, type, invalid, invalidClassName, ...props }, ref) => {
   let additionClassName = "";
   if (invalid) {
@@ -633,7 +650,7 @@ const Button = React.forwardRef(
         default:
           loaderSize = "h-5 w-5";
       }
-      loader = /* @__PURE__ */ jsx("span", { className: "animate-spin border-t-2 border-b-2 border-white rounded-full " + loaderSize });
+      loader = /* @__PURE__ */ jsx(Loader2, { className: "animate-spin " + loaderSize });
     } else {
       loader = icon ? /* @__PURE__ */ jsx("span", { className: hasIconOnly ? "" : iconPosition == "right" ? "ml-4" : "mr-4", children: icon }) : null;
     }
@@ -645,9 +662,6 @@ const Button = React.forwardRef(
   }
 );
 Button.displayName = "Button";
-const ButtonSkeleton = ({ variant = "default", size = "default", className }) => {
-  return /* @__PURE__ */ jsx("div", { className: cn("inline-block w-32 h-10 bg-gray-300  animate-pulse", buttonVariants({ variant, size, className })) });
-};
 
 const Modal = ({
   open,
@@ -1067,7 +1081,7 @@ const Title = ({ title, children, allowCopy = true }) => {
   ] });
 };
 
-const envPath = path.join(appRoot.toString(), ".env");
+const envPath = path$1.join(appRoot.toString(), ".env");
 dotenv.config({ path: envPath });
 function getBoolean(str, defaultValue = false) {
   return str ? str.toLowerCase() === "true" : defaultValue;
@@ -1234,6 +1248,9 @@ const parseObjectId = function(string) {
 const toJsonString = function(doc) {
   return EJSON.stringify(EJSON.serialize(doc));
 };
+function isCursor(obj) {
+  return obj && typeof obj.next === "function" && typeof obj.toArray === "function";
+}
 
 const ALLOWED_MIME_TYPES = /* @__PURE__ */ new Set(["text/csv", "application/json"]);
 const converters = {
@@ -1417,6 +1434,9 @@ class Collection {
     };
     return ctx;
   };
+  getDbCollection = () => {
+    return this.collection;
+  };
   // findDocuments = async (query: { [x: string]: any }) => {
   // 	const queryOptions = this._getQueryOptions(query);
   // 	this._getItemsAndCount(query, queryOptions);
@@ -1524,6 +1544,69 @@ class Collection {
     }
     return await this.collection.insertMany(docs);
   };
+  async configureQueryAnalyzer(options) {
+    console.log("Calling function", "configureQueryAnalyzer", options);
+    if (!options?.mode) {
+      throw new Error("Mode is required");
+    }
+    const command = {
+      configureQueryAnalyzer: this.collectionName,
+      mode: options.mode
+      // e.g. "off", "slowOnly", "full"
+    };
+    if (options.samplesPerSecond !== void 0) {
+      command.samplesPerSecond = options.samplesPerSecond;
+    }
+    return await this.db?.command(command);
+  }
+  async getShardDistribution() {
+    const pipeline = [{ $shardedDataDistribution: {} }];
+    const distribution = await this.collection.aggregate(pipeline).toArray();
+    return distribution;
+  }
+  async getShardVersion() {
+    const namespace = `${this.db.databaseName}.${this.collectionName}`;
+    const adminDb = this.db.admin();
+    const command = { getShardVersion: namespace };
+    return await adminDb.command(command);
+  }
+  async stats() {
+    const command = { collStats: this.collectionName };
+    return await this.db.command(command);
+  }
+  async totalIndexSize() {
+    const command = { collStats: this.collectionName };
+    const stats = await this.db.command(command);
+    return stats?.totalIndexSize || 0;
+  }
+  async totalSize() {
+    const command = { collStats: this.collectionName };
+    const stats = await this.db.command(command);
+    return stats?.totalSize || 0;
+  }
+  async validate(options) {
+    const command = {
+      validate: this.collectionName,
+      full: options.full || void 0,
+      repair: options.repair || void 0,
+      checkBSONConformance: options.checkBSONConformance || void 0
+    };
+    return await this.db.command(command);
+  }
+  async storageSize() {
+    const command = { collStats: this.collectionName };
+    const stats = await this.db.command(command);
+    return stats?.storageSize || 0;
+  }
+  async callFunction(functionName, ...args) {
+    if (typeof this[functionName] === "function") {
+      return this[functionName](...args);
+    }
+    if (this.collection && typeof this.collection[functionName] === "function") {
+      return this.collection[functionName](...args);
+    }
+    throw new Error(`${functionName} is not a function`);
+  }
 }
 
 class Database {
@@ -2012,7 +2095,7 @@ const loader$9 = async ({ request, params }) => {
     return Response.json({ status: "error", error: error.message }, { status: 500 });
   }
 };
-const validate$2 = ({ collectionName }) => {
+const validate$3 = ({ collectionName }) => {
   const errors = {};
   if (!collectionName || collectionName.trim() == "" || !isValidCollectionName(collectionName)) {
     errors["collectionName"] = "The collection name is invalid";
@@ -2030,7 +2113,7 @@ const action$7 = async ({ request, params }) => {
       return Response.json({ status: "error", message: "Invalid submission" }, { status: 500 });
     }
     if (jsonQuery.create) {
-      const errors = validate$2(jsonQuery.create);
+      const errors = validate$3(jsonQuery.create);
       if (Object.keys(errors).length > 0) {
         return Response.json({ status: "error", message: "Please specify a valid name for the collection to be created", errors }, { status: 500 });
       }
@@ -2481,14 +2564,14 @@ function DatabasePage$1() {
   ] });
 }
 
-const route1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route2 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$7,
   default: DatabasePage$1,
   loader: loader$9
 }, Symbol.toStringTag, { value: 'Module' }));
 
-const CopyText = ({ text, className }) => {
+const CopyText = ({ text, className, iconClassName }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     if (!text) {
@@ -2501,7 +2584,7 @@ const CopyText = ({ text, className }) => {
       }, 1e3);
     });
   };
-  return /* @__PURE__ */ jsx("span", { className: "cursor-pointer" + (className ? " " + className : ""), onClick: handleCopy, children: copied ? /* @__PURE__ */ jsx(CheckIcon, {}) : /* @__PURE__ */ jsx(CopyIcon, {}) });
+  return /* @__PURE__ */ jsx("span", { className: "cursor-pointer" + (className ? " " + className : ""), onClick: handleCopy, children: copied ? /* @__PURE__ */ jsx(CheckIcon, { className: iconClassName }) : /* @__PURE__ */ jsx(CopyIcon, { className: iconClassName }) });
 };
 const CopyTextButton = ({ text, children, ...rest }) => {
   const [copied, setCopied] = useState(false);
@@ -2962,16 +3045,38 @@ const AutocompleteTextField = ({
   ] });
 };
 
+const typeOptions = ["Auto", "String", "Number", "Boolean", "ObjectId", "Date", "Null", "Array", "Object"];
+const getValueType = (value) => {
+  if (typeof value === "string") {
+    return "String";
+  } else if (typeof value === "number") {
+    return "Number";
+  } else if (typeof value === "boolean") {
+    return "Boolean";
+  } else if (value === null) {
+    return "Null";
+  } else if (value instanceof Date) {
+    return "Date";
+  } else if (Array.isArray(value)) {
+    return "Array";
+  } else if (typeof value === "object") {
+    return "Object";
+  } else {
+    return "Auto";
+  }
+};
 const IconButton = ({ children, ...props }) => {
   return /* @__PURE__ */ jsx("button", { ...props, className: "px-1 py-1 hover:bg-neutral-200" + (props.className ? " " + props.className : ""), children });
 };
-const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpdate, onDelete, onAdd }) => {
+const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, autocompleteType, onUpdate, onDelete, onAdd }) => {
   const [isExpanded, setIsExpanded] = useState(expanded);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const [selectedType, setSelectedType] = useState("String");
+  const [error, setError] = useState(null);
   const ref = useRef(null);
   const handleToggle = () => setIsExpanded(!isExpanded);
   const handleEdit = () => {
@@ -2979,29 +3084,113 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
     setIsEditing(true);
   };
   const handleSave = () => {
-    try {
-      const parsedValue = EJSON.parse(editValue);
+    setError(null);
+    parseValue(editValue).then((parsedValue) => {
       onUpdate?.(path, parsedValue);
       setIsEditing(false);
-    } catch (error) {
-      onUpdate?.(path, editValue);
-      setIsEditing(false);
-    }
-    setIsExpanded(true);
+      setError(null);
+      setIsExpanded(true);
+    }).catch((err) => {
+      setError(err.message);
+    });
+  };
+  const parseValue = (editValue2) => {
+    return new Promise((resolve, reject) => {
+      switch (selectedType) {
+        case "Number":
+          const num = Number(editValue2);
+          if (isNaN(num)) {
+            reject(new Error("Invalid number"));
+            return;
+          }
+          resolve(num);
+          break;
+        case "Boolean":
+          if (editValue2 == "1" || editValue2.toLowerCase() === "true") {
+            resolve(true);
+          } else if (editValue2 == "0" || editValue2.toLowerCase() === "false") {
+            resolve(false);
+          } else {
+            reject(new Error("Invalid boolean"));
+            return;
+          }
+          break;
+        case "Null":
+          if (editValue2.trim().toLowerCase() !== "null" && editValue2.trim() !== "") {
+            reject(new Error('For "Null" type, the value must be "null" or empty'));
+            return;
+          }
+          resolve(null);
+          break;
+        case "Date":
+          const date = new Date(editValue2);
+          if (isNaN(date.getTime())) {
+            reject(new Error("Invalid date"));
+            return;
+          }
+          resolve(date);
+          break;
+        case "Array":
+          try {
+            const arr = EJSON.parse(editValue2);
+            if (!Array.isArray(arr)) {
+              reject(new Error("Value is not an array"));
+              return;
+            }
+            resolve(arr);
+          } catch (error2) {
+            reject(new Error(error2.message));
+            return;
+          }
+          break;
+        case "ObjectId":
+          const objId = new ObjectId(editValue2);
+          if (!ObjectId.isValid(objId)) {
+            reject(new Error("Invalid ObjectId"));
+            return;
+          }
+          resolve(objId);
+          break;
+        case "Object":
+          try {
+            const obj = EJSON.parse(editValue2);
+            if (typeof obj !== "object" || Array.isArray(obj) || obj === null) {
+              reject(new Error("Value is not an object"));
+              return;
+            }
+            resolve(obj);
+          } catch (error2) {
+            reject(new Error(error2.message));
+            return;
+          }
+          break;
+        case "String":
+          resolve(editValue2);
+          setIsEditing(false);
+          break;
+        default:
+          try {
+            const parsedValue = EJSON.parse(editValue2);
+            resolve(parsedValue);
+            setIsEditing(false);
+            return;
+          } catch (error2) {
+            reject(new Error(error2.message));
+            return;
+          }
+      }
+    });
   };
   const handleAdd = () => {
-    try {
-      const parsedValue = newValue.trim() === "" ? "" : EJSON.parse(newValue);
+    setError(null);
+    parseValue(newValue).then((parsedValue) => {
       onAdd?.(path, newKey, parsedValue);
       setNewKey(() => "");
       setNewValue(() => "");
       setIsAddingNew(false);
-    } catch (error) {
-      onAdd?.(path, newKey, newValue);
-      setNewKey(() => "");
-      setNewValue(() => "");
-      setIsAddingNew(false);
-    }
+    }).catch((err) => {
+      setError(err.message);
+    });
     setIsExpanded(true);
   };
   const renderValue = () => {
@@ -3010,21 +3199,38 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
       if (ref.current) {
         style = { minWidth: ref.current.clientWidth + 5 + "px" };
       }
-      return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ jsx(
-          AutocompleteTextField,
-          {
-            className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300",
-            trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
-            options: mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems),
-            attributes: { placeholder: "Value (JSON or String or Number ...)", style: { resize: "both", ...style } },
-            value: editValue,
-            Component: "textarea",
-            onChange: (value) => setEditValue(value)
-          }
-        ),
-        /* @__PURE__ */ jsx(IconButton, { onClick: handleSave, className: "", children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-4 h-4" }) }),
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsEditing(false), className: "", children: /* @__PURE__ */ jsx(XIcon, { className: "w-4 h-4" }) })
+      return /* @__PURE__ */ jsxs("div", { className: "flex flex-col", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-2", children: [
+          /* @__PURE__ */ jsx("div", { className: "flex flex-col gap-1", children: /* @__PURE__ */ jsx(
+            "textarea",
+            {
+              className: "w-32 h-6 px-1 pt-0.5 text-xs leading-5 font-medium border border-solid  border-neutral-300",
+              placeholder: "Value (JSON or String or Number ...)",
+              style: { resize: "both", ...style },
+              value: editValue,
+              onChange: (e) => setEditValue(e.target.value)
+            }
+          ) }),
+          /* @__PURE__ */ jsxs(
+            Select,
+            {
+              value: selectedType,
+              onValueChange: (value) => {
+                setSelectedType(value);
+              },
+              children: [
+                /* @__PURE__ */ jsx(SelectTrigger, { className: "w-12 h-6 px-1 py-1 text-xs bg-white min-w-24", children: /* @__PURE__ */ jsx(SelectValue, { placeholder: "Type" }) }),
+                /* @__PURE__ */ jsx(SelectContent, { children: typeOptions.map((type) => /* @__PURE__ */ jsx(SelectItem, { value: type, className: "text-xs", children: type }, type)) })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsx(IconButton, { onClick: handleSave, className: "", children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-3 h-3" }) }),
+          /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsEditing(false), className: "", children: /* @__PURE__ */ jsx(XIcon, { className: "w-3 h-3" }) })
+        ] }),
+        error && /* @__PURE__ */ jsxs("div", { className: "flex items-center px-1 mt-1 text-xs text-red-600 bg-red-100", children: [
+          /* @__PURE__ */ jsx(CircleX, { className: "w-3 h-3 mr-1" }),
+          error
+        ] })
       ] });
     }
     if (typeof data !== "object" || data === null || data instanceof ObjectId || data instanceof Date) {
@@ -3041,7 +3247,7 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
         {
           ref,
           className: [
-            "px-1 rounded",
+            "px-1 min-h-5 flex items-center rounded",
             typeof data === "string" && "text-green-600",
             typeof data === "number" && "text-blue-600",
             data instanceof ObjectId && "text-red-600 font-medium",
@@ -3057,60 +3263,83 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
   };
   const renderAddNew = () => {
     if (!isAddingNew) return null;
-    return /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 mt-1 mb-1 ml-4", children: [
-      /* @__PURE__ */ jsx(
-        AutocompleteTextField,
-        {
-          className: "w-32 h-6 px-1 text-xs font-medium border border-solid  border-neutral-300",
-          trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
-          options: mongodbOperators.concat(autocompleteItems),
-          attributes: { placeholder: "Key" },
-          value: newKey,
-          Component: "input",
-          onChange: (value) => setNewKey(value)
-        }
-      ),
-      /* @__PURE__ */ jsx("span", { className: "text-xs", children: ":" }),
-      /* @__PURE__ */ jsx(
-        AutocompleteTextField,
-        {
-          className: "w-32 h-6 px-1 pt-0.5 text-xs font-medium border border-solid  border-neutral-300",
-          trigger: ["$"].concat(autocompleteItems.map((e) => e.substring(0, 1))),
-          options: mongodbOperators.map((e) => e.substring(1)).concat(autocompleteItems),
-          attributes: { placeholder: "Value (JSON or String or Number ...)", style: { resize: "both" } },
-          value: newValue,
-          Component: "textarea",
-          onChange: (value) => setNewValue(value)
-        }
-      ),
-      /* @__PURE__ */ jsx(IconButton, { onClick: handleAdd, disabled: !newKey.trim(), children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-4 h-4" }) }),
-      /* @__PURE__ */ jsx(
-        IconButton,
-        {
-          onClick: () => {
-            setNewKey(() => "");
-            setNewValue(() => "");
-            setIsAddingNew(false);
-          },
-          children: /* @__PURE__ */ jsx(XIcon, { className: "w-4 h-4" })
-        }
-      )
+    return /* @__PURE__ */ jsxs("div", { className: "flex flex-col", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-1 mt-1 mb-1 ml-4", children: [
+        autocompleteType === "select" ? /* @__PURE__ */ jsxs(
+          Select,
+          {
+            value: newKey,
+            onValueChange: (value) => {
+              const valueType = getValueType(autocompleteItems[value]);
+              setSelectedType(valueType);
+              setNewValue(JSON.stringify(autocompleteItems[value]));
+              setNewKey(value);
+            },
+            children: [
+              /* @__PURE__ */ jsx(SelectTrigger, { className: "w-32 h-6 px-1 text-xs bg-white min-w-24", children: /* @__PURE__ */ jsx(SelectValue, { placeholder: "Key" }) }),
+              /* @__PURE__ */ jsx(SelectContent, { children: Object.keys(autocompleteItems).map((key) => /* @__PURE__ */ jsx(SelectItem, { value: key, className: "text-xs", children: key }, key)) })
+            ]
+          }
+        ) : /* @__PURE__ */ jsx(
+          AutocompleteTextField,
+          {
+            className: "w-32 h-6 px-1 text-xs font-medium border border-solid border-neutral-300",
+            trigger: ["$"].concat(Object.keys(autocompleteItems).map((e) => e.substring(0, 1))),
+            options: mongodbOperators.concat(Object.keys(autocompleteItems)),
+            attributes: { placeholder: "Key" },
+            value: newKey,
+            Component: "input",
+            onChange: (value) => setNewKey(value)
+          }
+        ),
+        /* @__PURE__ */ jsx("span", { className: "flex items-center h-6 text-xs", children: ":" }),
+        /* @__PURE__ */ jsx(
+          "textarea",
+          {
+            className: "w-32 h-6 px-1 pt-0 text-xs font-medium leading-5 border border-solid border-neutral-300",
+            placeholder: "Value (JSON or String or Number ...)",
+            style: { resize: "both" },
+            value: newValue,
+            onChange: (e) => setNewValue(e.target.value)
+          }
+        ),
+        /* @__PURE__ */ jsxs(Select, { value: selectedType, onValueChange: (value) => setSelectedType(value), children: [
+          /* @__PURE__ */ jsx(SelectTrigger, { className: "w-12 h-6 px-1 py-1 text-xs bg-white min-w-24", children: /* @__PURE__ */ jsx(SelectValue, { placeholder: "Type" }) }),
+          /* @__PURE__ */ jsx(SelectContent, { children: typeOptions.map((type) => /* @__PURE__ */ jsx(SelectItem, { value: type, className: "text-xs", children: type }, type)) })
+        ] }),
+        /* @__PURE__ */ jsx(IconButton, { onClick: handleAdd, disabled: !newKey.trim(), children: /* @__PURE__ */ jsx(CheckIcon, { className: "w-3 h-3" }) }),
+        /* @__PURE__ */ jsx(
+          IconButton,
+          {
+            onClick: () => {
+              setNewKey(() => "");
+              setNewValue(() => "");
+              setIsAddingNew(false);
+            },
+            children: /* @__PURE__ */ jsx(XIcon, { className: "w-3 h-3" })
+          }
+        )
+      ] }),
+      error && /* @__PURE__ */ jsxs("div", { className: "flex items-center px-1 mt-1 text-xs text-red-600 bg-red-100", children: [
+        /* @__PURE__ */ jsx(CircleX, { className: "w-3 h-3 mr-1" }),
+        error
+      ] })
     ] });
   };
   if (typeof data !== "object" || data === null || data instanceof ObjectId || data instanceof Date) {
-    return /* @__PURE__ */ jsxs("div", { className: "relative flex items-center gap-1 py-0.5 text-sm hover:bg-neutral-100 group", children: [
-      /* @__PURE__ */ jsx("div", { className: "w-4" }),
-      /* @__PURE__ */ jsxs("span", { className: "flex gap-1", children: [
-        /* @__PURE__ */ jsx("span", { className: "font-medium text-center text-right min-w-4", children: path[path.length - 1] }),
+    return /* @__PURE__ */ jsxs("div", { className: "relative flex items-start gap-1 py-0.5 text-sm hover:bg-neutral-100 group", children: [
+      /* @__PURE__ */ jsx("div", { className: "flex-shrink-0 w-3" }),
+      /* @__PURE__ */ jsxs("span", { className: "flex items-center mr-1 min-h-5", children: [
+        /* @__PURE__ */ jsx("span", { className: "font-medium text-center text-right", children: path[path.length - 1] }),
         /* @__PURE__ */ jsx("span", { className: "font-medium text-center", children: ":" })
       ] }),
       renderValue(),
       /* @__PURE__ */ jsxs("div", { className: "flex items-center h-5 gap-1 ml-10 opacity-0 group-hover:opacity-100 left-full", children: [
         !isEditing && allowEdit && /* @__PURE__ */ jsxs(Fragment, { children: [
-          /* @__PURE__ */ jsx(IconButton, { onClick: handleEdit, title: "Edit", children: /* @__PURE__ */ jsx(PencilIcon, { className: "w-4 h-4" }) }),
-          /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "px-1 py-1 text-red-600 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-4 h-4" }) })
+          /* @__PURE__ */ jsx(IconButton, { onClick: handleEdit, title: "Edit", children: /* @__PURE__ */ jsx(PencilIcon, { className: "w-3 h-3" }) }),
+          /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "px-1 py-1 text-red-600 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-3 h-3" }) })
         ] }),
-        /* @__PURE__ */ jsx(IconButton, { className: "px-1 py-1 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(CopyText, { text: EJSON.stringify(data) }) })
+        /* @__PURE__ */ jsx(IconButton, { className: "px-1 py-1 hover:bg-neutral-200", children: /* @__PURE__ */ jsx(CopyText, { iconClassName: "w-3 h-3", text: EJSON.stringify(data) }) })
       ] })
     ] });
   }
@@ -3124,7 +3353,7 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
   }
   return /* @__PURE__ */ jsxs("div", { children: [
     /* @__PURE__ */ jsxs("div", { className: "relative flex items-center gap-1 py-0.5 text-sm group" + (isRoot ? " mb-1" : ""), children: [
-      /* @__PURE__ */ jsx("button", { onClick: handleToggle, className: "w-4 h-4", children: isExpanded ? /* @__PURE__ */ jsx(ChevronDownIcon, { className: "w-4 h-4" }) : /* @__PURE__ */ jsx(ChevronRightIcon, { className: "w-4 h-4" }) }),
+      /* @__PURE__ */ jsx("button", { onClick: handleToggle, className: "w-3 h-3", children: isExpanded ? /* @__PURE__ */ jsx(ChevronDownIcon, { className: "w-3 h-3" }) : /* @__PURE__ */ jsx(ChevronRightIcon, { className: "w-3 h-3" }) }),
       /* @__PURE__ */ jsxs("span", { className: "flex items-center gap-1", children: [
         /* @__PURE__ */ jsx("span", { className: "flex font-medium", children: label }),
         /* @__PURE__ */ jsxs("span", { className: "text-xs text-neutral-400 whitespace-nowrap", children: [
@@ -3135,8 +3364,8 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
         ] })
       ] }),
       !isEditing && allowEdit && /* @__PURE__ */ jsxs("div", { className: "flex items-center h-5 gap-1 ml-10 opacity-0 group-hover:opacity-100 left-full", children: [
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsAddingNew(true), children: /* @__PURE__ */ jsx(PlusIcon, { className: "w-4 h-4" }) }),
-        /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "text-red-600", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-4 h-4" }) })
+        /* @__PURE__ */ jsx(IconButton, { onClick: () => setIsAddingNew(true), children: /* @__PURE__ */ jsx(PlusIcon, { className: "w-3 h-3" }) }),
+        /* @__PURE__ */ jsx(IconButton, { onClick: () => onDelete?.(path), className: "text-red-600", children: /* @__PURE__ */ jsx(TrashIcon, { className: "w-3 h-3" }) })
       ] })
     ] }),
     allowEdit && renderAddNew(),
@@ -3156,7 +3385,7 @@ const TreeNode$1 = ({ expanded, allowEdit, data, path, autocompleteItems, onUpda
   ] });
 };
 
-const JsonTreeEditor = ({ autocompleteItems, isExpanded, allowEdit = true, data = {}, onChange }) => {
+const JsonTreeEditor = ({ autocompleteItems, autocompleteType, isExpanded, allowEdit = true, data = {}, onChange }) => {
   const handleUpdate = (path, value) => {
     const newData = { ...data };
     let current = newData;
@@ -3200,6 +3429,7 @@ const JsonTreeEditor = ({ autocompleteItems, isExpanded, allowEdit = true, data 
     TreeNode$1,
     {
       autocompleteItems,
+      autocompleteType,
       allowEdit: !!(onChange && allowEdit),
       expanded: isExpanded,
       data,
@@ -3308,7 +3538,7 @@ function renderSelectItems(total) {
   const itemArr = [];
   while (counter <= total) {
     itemArr.push(
-      /* @__PURE__ */ jsx(SelectItem, { value: counter, children: String(counter) }, counter)
+      /* @__PURE__ */ jsx(SelectItem, { value: counter.toString(), children: String(counter) }, counter)
     );
     counter++;
   }
@@ -3448,11 +3678,6 @@ const Pagination = React__default.forwardRef(function Pagination2({
       /* @__PURE__ */ jsxs(
         Select,
         {
-          className: `select__item-count`,
-          labelText: "",
-          hideLabel: true,
-          noLabel: true,
-          inline: true,
           onValueChange: handleSizeChange,
           disabled: pageSizeInputDisabled || disabled,
           value: pageSize,
@@ -3472,11 +3697,8 @@ const Pagination = React__default.forwardRef(function Pagination2({
         /* @__PURE__ */ jsxs(
           Select,
           {
-            labelText: `Page of ${totalPages} pages`,
-            inline: true,
-            hideLabel: true,
             onValueChange: handlePageInputChange,
-            value: page,
+            value: page.toString(),
             disabled: pageInputDisabled || disabled,
             children: [
               /* @__PURE__ */ jsx(SelectTrigger, { className: `border-0 shadow-none`, children: page }),
@@ -3502,6 +3724,1035 @@ const Pagination = React__default.forwardRef(function Pagination2({
   ] });
 });
 
+const find = {
+  on: "collection",
+  name: "find",
+  label: "Find",
+  description: "Find documents in a collection",
+  parameters: [
+    {
+      type: "bson",
+      description: "The query filter document (empty means match all)",
+      name: "filter",
+      value: {},
+      // The query filter document (empty means match all)
+      label: "Filter",
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+      // this will be passed to the function if value is not set or parameter is omitted
+    },
+    {
+      name: "options",
+      type: "bson",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          projection: {},
+          // Fields to include or exclude (optional)
+          sort: {},
+          // Sort order, e.g. {"age": 1} for ascending (optional)
+          skip: 0,
+          // Number of documents to skip (optional)
+          limit: 10,
+          // Maximum number of documents to return (optional)
+          collation: {},
+          // Collation rules (optional)
+          hint: {},
+          // Index hint (optional)
+          maxTimeMS: 5e3
+          // Max time in ms for the query (optional)
+        }
+      },
+      parse: (value, urlParams) => {
+        let newValue = {};
+        if (typeof value == "object") {
+          newValue = { ...value };
+        }
+        if (urlParams.sort) {
+          newValue.sort = {};
+          newValue.sort[urlParams.sort] = Number(urlParams.direction || 0);
+        }
+        if (urlParams.skip) {
+          newValue.skip = Number(urlParams.skip);
+        }
+        if (urlParams.limit) {
+          newValue.limit = Number(urlParams.limit);
+        }
+        return newValue;
+      },
+      label: "Options",
+      description: "Optional settings for the query (e.g., sort, limit, skip)",
+      default: {
+        skip: 0,
+        limit: 10
+      }
+      // this will be passed to the function if value is not set or parameter is omitted
+    }
+  ]
+};
+
+const find$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: find
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const insertOneSpec = {
+  on: "collection",
+  name: "insertOne",
+  label: "Insert One",
+  description: "Insert a single document into the collection",
+  parameters: [
+    {
+      type: "bson",
+      name: "document",
+      label: "Document",
+      description: "The document to insert",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the insert operation (e.g., writeConcern)",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          writeConcern: {}
+          // Write concern document (optional)
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const insertOne = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: insertOneSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const updateOneSpec = {
+  on: "collection",
+  name: "updateOne",
+  label: "Update One",
+  description: "Update a single document in the collection",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The query filter to match the document to update",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "update",
+      label: "Update",
+      description: "The update operations to apply to the matched document",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the update operation",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          upsert: false,
+          // Insert if not found (optional)
+          writeConcern: {},
+          // Write concern document (optional)
+          collation: {},
+          // Collation rules (optional)
+          arrayFilters: [],
+          // Array filters for update (optional)
+          hint: {},
+          // Index hint (optional)
+          let: {},
+          // Variables for use in the update expression (optional)
+          sort: {}
+          // Sort order for the update (optional)
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const updateOne = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: updateOneSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const deleteOneSpec = {
+  on: "collection",
+  name: "deleteOne",
+  label: "Delete One",
+  description: "Delete a single document from the collection",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The query filter to match the document to delete",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the delete operation",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          writeConcern: {},
+          // Write concern document (optional)
+          collation: {},
+          // Collation rules (optional)
+          hint: {}
+          // Index hint (optional, document or string)
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const deleteOne = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: deleteOneSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const validateSpec = {
+  on: "collection",
+  name: "validate",
+  label: "Validate",
+  description: "Validates a collection and its indexes for correctness. Can optionally repair inconsistencies and check BSON conformance.",
+  parameters: [
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the validate operation",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          full: false,
+          // Scan the entire collection (optional)
+          repair: false,
+          // Attempt to fix inconsistencies (optional, MongoDB 5.0+)
+          checkBSONConformance: false
+          // Check BSON conformance (optional, MongoDB 6.2+)
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const validate$2 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: validateSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const getIndexesSpec = {
+  on: "collection",
+  name: "indexes",
+  label: "Get Indexes",
+  description: "Returns an array of documents describing the existing indexes on the collection, including hidden indexes and indexes currently being built.",
+  parameters: [
+    // No parameters required for getIndexes
+  ]
+};
+
+const getIndexes = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: getIndexesSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const dropIndexSpec = {
+  on: "collection",
+  name: "dropIndex",
+  label: "Drop Index",
+  description: "Drops or removes the specified index from a collection. You can specify the index by name or by index specification document. Cannot drop the default _id index.",
+  parameters: [
+    {
+      type: "stringOrBson",
+      name: "index",
+      label: "Index",
+      description: "Required. The index to drop, specified by name or index specification document.",
+      value: "",
+      options: {
+        type: "autocomplete"
+      },
+      default: ""
+    }
+  ]
+};
+
+const dropIndex = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: dropIndexSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const configureQueryAnalyzerSpec = {
+  on: "collection",
+  name: "configureQueryAnalyzer",
+  label: "Configure Query Analyzer",
+  description: "Configures the query analyzer for a collection. Set the mode to 'full' or 'off', and optionally specify the number of samples per second.",
+  parameters: [
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Settings for the query analyzer",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          mode: "full",
+          // Required: "full" or "off"
+          samplesPerSecond: 1
+          // Optional: double, 0-50 if mode is "full"
+        }
+      },
+      default: {
+        mode: "full"
+      }
+    }
+  ]
+};
+
+const configureQueryAnalyzer = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: configureQueryAnalyzerSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const aggregateSpec = {
+  on: "collection",
+  name: "aggregate",
+  label: "Aggregate",
+  description: "Calculates aggregate values for the data in a collection or a view using a sequence of aggregation pipeline stages.",
+  parameters: [
+    {
+      type: "array",
+      name: "pipeline",
+      label: "Pipeline",
+      description: "A sequence of data aggregation operations or stages.",
+      value: [],
+      options: {
+        type: "autocomplete"
+      },
+      default: []
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the aggregation operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          allowDiskUse: false,
+          // Enables writing to temporary files
+          batchSize: 1e3,
+          // Number of documents to return per batch
+          collation: {},
+          // Collation rules
+          maxTimeMS: 5e3,
+          // Max time in ms for the aggregation
+          hint: {},
+          // Index hint
+          comment: "",
+          // Optional comment
+          explain: false
+          // Return details on processing
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const aggregate = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: aggregateSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const countDocumentsSpec = {
+  on: "collection",
+  name: "countDocuments",
+  label: "Count Documents",
+  description: "Returns the number of documents that match the query of the collection or view. Available for use in transactions.",
+  parameters: [
+    {
+      type: "bson",
+      name: "query",
+      label: "Query",
+      description: "The query selection criteria. To count all documents, specify an empty document.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings that affect the count behavior.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          limit: 0,
+          // Maximum number of documents to count
+          skip: 0,
+          // Number of documents to skip before counting
+          hint: "",
+          // Index name or specification
+          maxTimeMS: 5e3
+          // Maximum time to allow the count to run
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const countDocuments = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: countDocumentsSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const createIndexSpec = {
+  on: "collection",
+  name: "createIndex",
+  label: "Create Index",
+  description: "Creates an index on a collection. Specify the keys, options, and optionally the commit quorum.",
+  parameters: [
+    {
+      type: "bson",
+      name: "keys",
+      label: "Keys",
+      description: "A document containing field and value pairs for the index keys. Use 1 for ascending, -1 for descending, or specify index types (e.g., 'text', 'hashed').",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for index creation (e.g., unique, sparse, name, expireAfterSeconds, etc.).",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          unique: false,
+          sparse: false,
+          name: "",
+          expireAfterSeconds: 0,
+          background: false,
+          partialFilterExpression: {},
+          collation: {}
+        }
+      },
+      default: {}
+    },
+    {
+      type: "stringOrNumber",
+      name: "commitQuorum",
+      label: "Commit Quorum",
+      description: "Optional. The minimum number of voting replica set members required for index build completion. Can be an integer or string (e.g., 'majority', 'votingMembers').",
+      value: "",
+      options: {
+        type: "select",
+        values: {
+          majority: "majority",
+          votingMembers: "votingMembers"
+        }
+      },
+      default: ""
+    }
+  ]
+};
+
+const createIndex = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: createIndexSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const distinctSpec = {
+  on: "collection",
+  name: "distinct",
+  label: "Distinct",
+  description: "Finds the distinct values for a specified field across a single collection or view and returns the unique results in an array.",
+  parameters: [
+    {
+      type: "string",
+      name: "field",
+      label: "Field",
+      description: "The field for which to return distinct values.",
+      value: "",
+      options: {
+        type: "autocomplete"
+      },
+      default: ""
+    },
+    {
+      type: "bson",
+      name: "query",
+      label: "Query",
+      description: "A query that specifies the documents from which to retrieve the distinct values.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the distinct operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          collation: {},
+          // Collation rules
+          maxTimeMS: 5e3,
+          // Maximum time to allow the query to run
+          readConcern: "local"
+          // Read concern level
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const distinct = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: distinctSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const estimatedDocumentCountSpec = {
+  on: "collection",
+  name: "estimatedDocumentCount",
+  label: "Estimated Document Count",
+  description: "Returns the count of all documents in a collection or view using collection metadata.",
+  parameters: [
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings that affect the count behavior.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          maxTimeMS: 5e3
+          // Maximum time to allow the count to run
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const estimatedDocumentCount = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: estimatedDocumentCountSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const findOneAndDeleteSpec = {
+  on: "collection",
+  name: "findOneAndDelete",
+  label: "Find One And Delete",
+  description: "Deletes a single document based on the filter and sort criteria, returning the deleted document.",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The selection criteria for the deletion. Specify an empty document to delete the first document returned in the collection.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the findOneAndDelete operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          writeConcern: {},
+          // Write concern document
+          projection: {},
+          // Fields to return
+          sort: {},
+          // Sorting order for matched documents
+          maxTimeMS: 5e3,
+          // Time limit in milliseconds
+          collation: {}
+          // Collation rules
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const findOneAndDelete = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: findOneAndDeleteSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const findOneAndReplaceSpec = {
+  on: "collection",
+  name: "findOneAndReplace",
+  label: "Find One And Replace",
+  description: "Replaces a single document based on the filter and sort criteria, returning the replaced document.",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The selection criteria for the replacement. Specify an empty document to match the first document in the collection.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "replacement",
+      label: "Replacement",
+      description: "The replacement document.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the findOneAndReplace operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          writeConcern: {},
+          // Write concern document
+          projection: {},
+          // Fields to return
+          sort: {},
+          // Sorting order for matched documents
+          maxTimeMS: 5e3,
+          // Time limit in milliseconds
+          upsert: false,
+          // Insert if not found
+          returnDocument: "before",
+          // "before" or "after"
+          returnNewDocument: false,
+          // Deprecated, use returnDocument
+          collation: {}
+          // Collation rules
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const findOneAndReplace = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: findOneAndReplaceSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const findOneAndUpdateSpec = {
+  on: "collection",
+  name: "findOneAndUpdate",
+  label: "Find One And Update",
+  description: "Updates a single document based on the filter and sort criteria, returning the updated document.",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The selection criteria for the update. Specify an empty document to match the first document in the collection.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bsonOrArray",
+      name: "update",
+      label: "Update",
+      description: "The update document or aggregation pipeline.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the findOneAndUpdate operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          writeConcern: {},
+          // Write concern document
+          projection: {},
+          // Fields to return
+          sort: {},
+          // Sorting order for matched documents
+          maxTimeMS: 5e3,
+          // Time limit in milliseconds
+          upsert: false,
+          // Insert if not found
+          returnDocument: "before",
+          // "before" or "after"
+          returnNewDocument: false,
+          // Deprecated, use returnDocument
+          collation: {},
+          // Collation rules
+          arrayFilters: []
+          // Array filters for update
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const findOneAndUpdate = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: findOneAndUpdateSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const getShardDistributionSpec = {
+  on: "collection",
+  name: "getShardDistribution",
+  label: "Get Shard Distribution",
+  description: "Returns information about the distribution of data across shards for a sharded collection.",
+  parameters: [
+    // No parameters required for getShardDistribution
+  ]
+};
+
+const getShardDistribution = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: getShardDistributionSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const getShardVersionSpec = {
+  on: "collection",
+  name: "getShardVersion",
+  label: "Get Shard Version",
+  description: "Returns information about the shard version for a sharded collection.",
+  parameters: [
+    // No parameters required for getShardVersion
+  ]
+};
+
+const getShardVersion = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: getShardVersionSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const isCappedSpec = {
+  on: "collection",
+  name: "isCapped",
+  label: "Is Capped",
+  description: "Returns a boolean indicating whether the collection is a capped collection.",
+  parameters: [
+    // No parameters required for isCapped
+  ]
+};
+
+const isCapped = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: isCappedSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const renameCollectionSpec = {
+  on: "collection",
+  name: "renameCollection",
+  label: "Rename Collection",
+  description: "Renames a collection to the specified target name. Optionally drops the target collection if it exists.",
+  parameters: [
+    {
+      type: "string",
+      name: "target",
+      label: "Target Name",
+      description: "The new name of the collection.",
+      value: "",
+      options: {
+        type: "autocomplete"
+      },
+      default: ""
+    },
+    {
+      type: "boolean",
+      name: "dropTarget",
+      label: "Drop Target",
+      description: "If true, drops the target collection before renaming. Default is false.",
+      value: false,
+      options: {
+        type: "select",
+        values: {
+          true: true,
+          false: false
+        }
+      },
+      default: false
+    }
+  ]
+};
+
+const renameCollection = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: renameCollectionSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const replaceOneSpec = {
+  on: "collection",
+  name: "replaceOne",
+  label: "Replace One",
+  description: "Replaces a single document that matches the filter with the replacement document.",
+  parameters: [
+    {
+      type: "bson",
+      name: "filter",
+      label: "Filter",
+      description: "The query filter to match the document to replace.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "replacement",
+      label: "Replacement",
+      description: "The replacement document.",
+      value: {},
+      options: {
+        type: "autocomplete"
+      },
+      default: {}
+    },
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the replace operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          upsert: false,
+          // Insert if not found
+          writeConcern: {},
+          // Write concern document
+          collation: {},
+          // Collation rules
+          hint: "",
+          // Index hint (document or string)
+          sort: {}
+          // Sort order for the replacement
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const replaceOne = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: replaceOneSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const statsSpec = {
+  on: "collection",
+  name: "stats",
+  label: "Stats",
+  description: "Returns statistics about the collection, such as storage size, document count, and index details.",
+  parameters: [
+    {
+      type: "bson",
+      name: "options",
+      label: "Options",
+      description: "Optional settings for the stats operation.",
+      value: {},
+      options: {
+        type: "select",
+        values: {
+          scale: 1,
+          // Scale factor for sizes
+          indexDetails: false,
+          // Include index details
+          indexDetailsKey: {},
+          // Filter index details by key
+          indexDetailsName: ""
+          // Filter index details by name
+        }
+      },
+      default: {}
+    }
+  ]
+};
+
+const stats = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: statsSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const storageSizeSpec = {
+  on: "collection",
+  name: "storageSize",
+  label: "Storage Size",
+  description: "Returns the storage size in bytes for the collection. This is a shortcut for the stats command's storageSize field.",
+  parameters: [
+    // No parameters required for storageSize
+  ]
+};
+
+const storageSize = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: storageSizeSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const totalIndexSizeSpec = {
+  on: "collection",
+  name: "totalIndexSize",
+  label: "Total Index Size",
+  description: "Returns the total size in bytes of all indexes for the collection. This is a shortcut for the stats command's totalIndexSize field.",
+  parameters: [
+    // No parameters required for totalIndexSize
+  ]
+};
+
+const totalIndexSize = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: totalIndexSizeSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const totalSizeSpec = {
+  on: "collection",
+  name: "totalSize",
+  label: "Total Size",
+  description: "Returns the total size in bytes for the collection, including all data and indexes. This is a shortcut for the stats command's totalSize field.",
+  parameters: [
+    // No parameters required for totalSize
+  ]
+};
+
+const totalSize = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: totalSizeSpec
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const specs = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  aggregate,
+  configureQueryAnalyzer,
+  countDocuments,
+  createIndex,
+  deleteOne,
+  distinct,
+  dropIndex,
+  estimatedDocumentCount,
+  find: find$1,
+  findOneAndDelete,
+  findOneAndReplace,
+  findOneAndUpdate,
+  getIndexes,
+  getShardDistribution,
+  getShardVersion,
+  insertOne,
+  isCapped,
+  renameCollection,
+  replaceOne,
+  stats,
+  storageSize,
+  totalIndexSize,
+  totalSize,
+  updateOne,
+  validate: validate$2
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const Textarea = React.forwardRef(({ className, ...props }, ref) => {
+  return /* @__PURE__ */ jsx(
+    "textarea",
+    {
+      className: cn(
+        "flex min-h-[60px] w-full  border border-input bg-transparent px-3 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        className
+      ),
+      ref,
+      ...props
+    }
+  );
+});
+Textarea.displayName = "Textarea";
+
+const functionSpecs = {};
+Object.keys(specs).forEach((spec) => {
+  if (typeof specs[spec].default === "object" && specs[spec].default?.name) {
+    if (specs[spec].default.on !== "collection") {
+      return;
+    }
+    functionSpecs[specs[spec].default.name] = specs[spec].default;
+  } else {
+    console.error("Unknown spec, you must export default on the function to work", spec.toString());
+  }
+});
 const IdeWithAutocomplete = ({ onChange }) => {
   return /* @__PURE__ */ jsx(
     CodeiumEditor,
@@ -3519,10 +4770,13 @@ const IdeWithAutocomplete = ({ onChange }) => {
     }
   );
 };
-const loadCollectionData = async ({ jsonQuery, request, params, withColumns = false }) => {
-  const url = new URL(request.url);
+const loadConnection = async (request) => {
   const session = await getUserSession(request);
   const connection = session.get("connection");
+  return await connect(connection);
+};
+const loadCollectionData = async ({ jsonQuery, request, params, withColumns = false }) => {
+  const url = new URL(request.url);
   const query = url.searchParams;
   if (!params.db) {
     return Response.json({ status: "error", message: "No database specified" }, { status: 500 });
@@ -3530,8 +4784,6 @@ const loadCollectionData = async ({ jsonQuery, request, params, withColumns = fa
   if (!params.col) {
     return Response.json({ status: "error", message: "No collection specified" }, { status: 500 });
   }
-  let mongo;
-  mongo = await connect(connection);
   let sortKey = query.get("sort") || jsonQuery.sort || "";
   const pagination = {
     limit: query.get("limit") || jsonQuery.limit || 10,
@@ -3541,25 +4793,83 @@ const loadCollectionData = async ({ jsonQuery, request, params, withColumns = fa
     pagination["sort"] = {};
     pagination["sort"][sortKey] = query.get("direction") || jsonQuery.direction || 0;
   }
+  const mongo = await loadConnection(request);
   const collection = new Collection(mongo, params.db, params.col, config);
   const collectionData = await collection.viewCollection({ ...jsonQuery, ...pagination });
-  let columns = null;
+  let columns = {};
   if (withColumns) {
-    columns = await collection.getColumns();
+    let parsedColumns = await collection.getColumns();
+    parsedColumns.map((col) => {
+      columns[col] = "";
+    });
   }
   return { ...collectionData, documents: EJSON.stringify(collectionData.docs), params, pagination, columns };
+};
+const executeCollectionFunctionByName = async (request, params, functionName, jsonQuery) => {
+  const functionSpec = functionSpecs[functionName];
+  if (!functionSpec) {
+    throw new Error(`Function ${functionName} not found`);
+  }
+  if (!params.db) {
+    throw new Error("No database specified");
+  }
+  if (!params.col) {
+    throw new Error("No collection specified");
+  }
+  let sortKey = jsonQuery.sort || "";
+  const pagination = {
+    ...jsonQuery.limit ? { limit: Number(jsonQuery.limit) } : {},
+    ...jsonQuery.skip ? { skip: Number(jsonQuery.skip) } : {}
+  };
+  if (sortKey != "") {
+    pagination["sort"] = {};
+    pagination["sort"][sortKey] = jsonQuery.direction || 0;
+  }
+  const mongo = await loadConnection(request);
+  const collection = new Collection(mongo, params.db, params.col, config);
+  const functionParams = EJSON.parse(jsonQuery.query || "{}");
+  const args = functionSpec.parameters.map((param) => {
+    const value = functionParams[param.name];
+    let outputValue = { ...param.default ? param.default : {}, ...param.parse ? param.parse(value, { ...pagination }) : {} };
+    if (outputValue["limit"]) {
+      pagination.limit = outputValue["limit"];
+    }
+    if (outputValue["skip"]) {
+      pagination.skip = outputValue["skip"];
+    }
+    if (outputValue["sort"]) {
+      pagination.sort = outputValue["sort"];
+    }
+    return outputValue;
+  });
+  let cursor = await collection.callFunction(functionName, ...args);
+  let raw = null;
+  let documents = null;
+  if (isCursor(cursor)) {
+    documents = await cursor.toArray();
+  } else {
+    raw = cursor;
+  }
+  return { documents: EJSON.stringify(documents), raw, ...pagination };
 };
 const action$6 = async ({ request, params }) => {
   try {
     const jsonQuery = await request.json();
-    if (!jsonQuery || !jsonQuery.query) {
+    if (!jsonQuery) {
       return Response.json({ status: "error", message: "No query specified" }, { status: 500 });
     }
-    jsonQuery.query = EJSON.parse(jsonQuery.query);
-    if (!jsonQuery || !jsonQuery.query) {
-      return Response.json({ status: "error", message: "No query specified" }, { status: 500 });
+    let output = null;
+    if (jsonQuery.function) {
+      try {
+        output = await executeCollectionFunctionByName(request, params, jsonQuery.function, jsonQuery);
+      } catch (e) {
+        return Response.json({ status: "error", message: e.message + `:
+ Function: ${jsonQuery.function}` }, { status: 500 });
+      }
+    } else {
+      return Response.json({ status: "error", message: "No function specified" }, { status: 500 });
     }
-    return Response.json({ status: "success", collection: await loadCollectionData({ jsonQuery, request, params }) }, { status: 200 });
+    return Response.json({ status: "success", ...output }, { status: 200 });
   } catch (e) {
     return Response.json({ status: "error", message: e.message }, { status: 500 });
   }
@@ -3584,7 +4894,7 @@ const loader$8 = async ({ request, params }) => {
 };
 function CollectionPage() {
   const loaderData = useLoaderData();
-  const [currentPage, setCurrenPage] = useState({
+  const [currentPage, setCurrentPage] = useState({
     page: 1,
     pageSize: 10
   });
@@ -3599,14 +4909,38 @@ function CollectionPage() {
   const [jsonQueryString, setJsonQueryString] = useState("");
   const [errorJsonQueryString, setErrorJsonQueryString] = useState("");
   const [isDelete, setIsDelete] = useState(false);
+  const [selectedFunction, setSelectedFunction] = useState("find");
   const navigate = useNavigate();
   const { columns } = loaderData;
   const [data, setData] = useState(loaderData);
-  const { title, stats, count, documents: loaderDocuments, params, pagination } = data;
-  const documents = EJSON.parse(loaderDocuments);
+  const { title, stats, count, documents: loaderDocuments, raw, params } = data;
+  const documents = EJSON.parse(loaderDocuments) || [];
+  const loading = fetcher.state == "submitting" || fetcher.state == "loading";
+  const executeFunction = () => {
+    if (!selectedFunction || selectedFunction == "" || !functionSpecs[selectedFunction]) {
+      setErrorJsonQueryString("Please select a function");
+      return;
+    }
+    setErrorJsonQueryString("");
+    setCurrentPage({ ...currentPage, page: 1 });
+    fetcher.submit(
+      {
+        function: selectedFunction,
+        query: EJSON.stringify(jsonQuery)
+      },
+      {
+        method: "POST",
+        encType: "application/json",
+        action: `/database/${params.db}/${params.col}`
+      }
+    );
+  };
   useEffect(() => {
-    if (!params || !initRef || !initRef.current) {
+    if (!initRef.current) {
       initRef.current = true;
+      return;
+    }
+    if (!params) {
       return;
     }
     const paginationObj = {};
@@ -3617,8 +4951,12 @@ function CollectionPage() {
     if (currentPage.pageSize != 10) {
       paginationObj["limit"] = currentPage.pageSize;
     }
+    if (!selectedFunction || selectedFunction == "" || !functionSpecs[selectedFunction]) {
+      return;
+    }
     fetcher.submit(
       {
+        function: selectedFunction,
         query: jsonQuery ? EJSON.stringify(jsonQuery) : {},
         ...paginationObj,
         sort: sort.field,
@@ -3633,7 +4971,16 @@ function CollectionPage() {
   }, [currentPage.page, currentPage.pageSize, sort.field, sort.direction]);
   useEffect(() => {
     if (fetcher.data && fetcher.data.status == "success") {
-      setData(fetcher.data.collection);
+      setData({
+        ...data,
+        documents: fetcher.data.documents || "",
+        raw: fetcher.data.raw
+      });
+      setCurrentPage({
+        ...currentPage,
+        page: fetcher.data.skip ? Math.floor((fetcher.data.skip || 0) / (fetcher.data.limit || 10)) + 1 : 1,
+        pageSize: fetcher.data.limit || 10
+      });
     } else if (fetcher.data && fetcher.data.status == "error") {
       setErrorJsonQueryString(fetcher.data?.message || "");
     }
@@ -3652,45 +4999,46 @@ function CollectionPage() {
             field: key,
             direction: prevSort.field == key ? prevSort.direction * -1 : 1
           }));
-          setCurrenPage({ ...currentPage, page: 1 });
+          setCurrentPage({ ...currentPage, page: 1 });
         },
         rows: documents
       }
     );
   } else {
-    items = documents.map((doc, index) => {
+    items = documents?.map((doc, index) => {
       return /* @__PURE__ */ jsx("div", { className: "w-full p-4 mb-3 overflow-auto bg-white border border-solid border-neutral-300", children: /* @__PURE__ */ jsx(JsonTreeEditor, { autocompleteItems: columns, isExpanded: false, data: doc }) }, doc._id ? doc._id.toString() : `document-${index}`);
     });
   }
+  const canBeViewedAsJson = (typeof raw === "object" || Array.isArray(raw)) && typeof raw !== "undefined";
+  const rawOutput = (raw == "" || typeof raw === "object" || Array.isArray(raw)) && typeof raw !== "undefined" ? raw : EJSON.stringify(raw);
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsxs("div", { className: "database-page", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pb-4", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsxs(Title, { title, children: [
             /* @__PURE__ */ jsx("span", { className: "font-normal opacity-50", children: "Collection:" }),
-            " ",
-            title
+            /* @__PURE__ */ jsx("span", { className: "ml-1", children: title })
           ] }),
           /* @__PURE__ */ jsxs("p", { className: "text-sm", children: [
             "Documents: ",
             stats?.count
-          ] }),
-          /* @__PURE__ */ jsx("div", { className: "flex items-center gap-2 mt-4", children: /* @__PURE__ */ jsx(
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-end gap-1", children: [
+          /* @__PURE__ */ jsx(
             Button,
             {
               size: "sm",
               variant: "danger",
               icon: /* @__PURE__ */ jsx(TrashIcon, {}),
-              tooltip: "Delete Database",
+              tooltip: "Delete Collection",
               onClick: (e) => {
                 e.preventDefault();
                 setIsDelete(true);
               },
               children: "Delete Collection"
             }
-          ) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-end gap-1", children: [
+          ),
           /* @__PURE__ */ jsx(
             Button,
             {
@@ -3729,91 +5077,94 @@ function CollectionPage() {
           /* @__PURE__ */ jsx("span", { className: "block mb-2 text-xs opacity-50", children: "Please enter your query below" })
         ] }),
         /* @__PURE__ */ jsxs(Tabs, { defaultValue: "json", children: [
-          /* @__PURE__ */ jsxs(TabsList, { className: "bg-neutral-100", "aria-label": "List of tabs", children: [
-            /* @__PURE__ */ jsx(TabsTrigger, { value: "json", children: "Json Editor" }),
-            /* @__PURE__ */ jsx(TabsTrigger, { value: "editor", children: "Codeium (Raw)" })
-          ] }),
+          /* @__PURE__ */ jsx(TabsList, { className: "bg-neutral-100", "aria-label": "List of tabs", children: /* @__PURE__ */ jsx(TabsTrigger, { value: "json", children: "Json Editor" }) }),
           /* @__PURE__ */ jsxs(TabsContent, { value: "json", children: [
-            /* @__PURE__ */ jsx("div", { className: "bg-white min-h-36", children: /* @__PURE__ */ jsx(JsonTreeEditor, { data: jsonQuery, autocompleteItems: columns, onChange: (data2) => setJsonQuery(data2) }) }),
+            /* @__PURE__ */ jsxs("div", { className: "flex bg-white divide-x divide-neutral-200 min-h-36", children: [
+              selectedFunction && functionSpecs[selectedFunction] && functionSpecs[selectedFunction].parameters.length > 0 ? functionSpecs[selectedFunction].parameters.map((param, index) => {
+                return /* @__PURE__ */ jsxs("div", { className: "flex-1 pr-10" + (index == 0 ? " pl-0" : " pl-6"), children: [
+                  /* @__PURE__ */ jsxs("div", { className: "flex flex-col mb-2", children: [
+                    /* @__PURE__ */ jsx("label", { className: "block text-sm font-medium", children: param.label }),
+                    /* @__PURE__ */ jsx("p", { className: "text-xs text-neutral-500", children: param.description })
+                  ] }),
+                  /* @__PURE__ */ jsx(
+                    JsonTreeEditor,
+                    {
+                      data: jsonQuery[param.name],
+                      autocompleteItems: param.options && param.options.type == "autocomplete" ? columns : param.options.values || {},
+                      autocompleteType: param.options && param.options.type == "autocomplete" ? "search" : param.options.type || "search",
+                      onChange: (data2) => setJsonQuery({ ...jsonQuery, [param.name]: data2 })
+                    }
+                  )
+                ] }, param.name + index);
+              }) : null,
+              /* @__PURE__ */ jsxs(
+                "div",
+                {
+                  className: "flex-1 overflow-auto" + (selectedFunction && functionSpecs[selectedFunction] && functionSpecs[selectedFunction].parameters.length > 0 ? " pl-10 pr-10" : ""),
+                  children: [
+                    /* @__PURE__ */ jsxs("div", { className: "flex flex-col mb-2", children: [
+                      /* @__PURE__ */ jsx("label", { className: "block text-sm font-medium", children: "Raw Response" }),
+                      /* @__PURE__ */ jsx("p", { className: "text-xs text-neutral-500", children: "Raw response from the server" })
+                    ] }),
+                    canBeViewedAsJson ? /* @__PURE__ */ jsx(JsonTreeEditor, { autocompleteItems: columns, isExpanded: false, data: rawOutput }) : /* @__PURE__ */ jsx(Textarea, { readOnly: true, value: rawOutput })
+                  ]
+                }
+              )
+            ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 mt-2", children: [
               /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
-                fetcher.state == "submitting" || fetcher.state == "loading" ? /* @__PURE__ */ jsx(ButtonSkeleton, { size: "sm" }) : /* @__PURE__ */ jsx(
-                  Button,
-                  {
-                    size: "sm",
-                    icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}),
-                    onClick: (e) => {
-                      e.preventDefault();
-                      setErrorJsonQueryString("");
-                      setCurrenPage({ ...currentPage, page: 1 });
-                      fetcher.submit(
-                        {
-                          query: EJSON.stringify(jsonQuery)
-                        },
-                        {
-                          method: "POST",
-                          encType: "application/json",
-                          action: `/database/${params.db}/${params.col}`
-                        }
-                      );
-                    },
-                    children: "Execute"
-                  }
-                ),
+                /* @__PURE__ */ jsxs("div", { className: "flex flex-1 gap-2", children: [
+                  /* @__PURE__ */ jsx("div", { className: "flex items-center gap-2 mb-4", children: /* @__PURE__ */ jsxs(
+                    Select,
+                    {
+                      disabled: loading,
+                      value: selectedFunction,
+                      onValueChange: (value) => {
+                        setData({
+                          ...data,
+                          raw: ""
+                        });
+                        setSelectedFunction(value);
+                      },
+                      children: [
+                        /* @__PURE__ */ jsx(SelectTrigger, { id: "function-select", className: "px-2 py-1 text-sm bg-white border border-neutral-300", children: /* @__PURE__ */ jsx(SelectValue, { placeholder: "Select a function" }) }),
+                        /* @__PURE__ */ jsx(SelectContent, { children: Object.keys(functionSpecs).map((fn) => /* @__PURE__ */ jsx(SelectItem, { value: fn, children: functionSpecs[fn].label || fn }, fn)) })
+                      ]
+                    }
+                  ) }),
+                  /* @__PURE__ */ jsx(
+                    Button,
+                    {
+                      size: "sm",
+                      disabled: !selectedFunction || selectedFunction == "",
+                      icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}),
+                      loading,
+                      onClick: () => {
+                        executeFunction();
+                      },
+                      children: "Execute"
+                    }
+                  )
+                ] }),
                 /* @__PURE__ */ jsx(CopyTextButton, { size: "sm", className: "ml-2", variant: "ghost", text: EJSON.stringify(jsonQuery), children: "Copy as BSON" })
               ] }),
               errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
             ] })
           ] }),
-          /* @__PURE__ */ jsxs(TabsContent, { value: "editor", children: [
-            /* @__PURE__ */ jsx(
-              IdeWithAutocomplete,
-              {
-                onChange: (data2) => {
-                  setJsonQueryString(data2);
-                  try {
-                    setJsonQuery(EJSON.parse(data2));
-                    setErrorJsonQueryString("");
-                  } catch (e) {
-                    setErrorJsonQueryString(e.message);
-                  }
+          /* @__PURE__ */ jsx(TabsContent, { value: "editor", children: /* @__PURE__ */ jsx(
+            IdeWithAutocomplete,
+            {
+              onChange: (data2) => {
+                setJsonQueryString(data2);
+                try {
+                  setJsonQuery(EJSON.parse(data2));
+                  setErrorJsonQueryString("");
+                } catch (e) {
+                  setErrorJsonQueryString(e.message);
                 }
               }
-            ),
-            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 mt-2", children: [
-              fetcher.state == "submitting" || fetcher.state == "loading" ? /* @__PURE__ */ jsx(ButtonSkeleton, { size: "sm" }) : /* @__PURE__ */ jsx(
-                Button,
-                {
-                  size: "sm",
-                  icon: /* @__PURE__ */ jsx(ArrowRightIcon, {}),
-                  onClick: (e) => {
-                    e.preventDefault();
-                    let jsonOutput = null;
-                    try {
-                      jsonOutput = EJSON.parse(jsonQueryString);
-                    } catch (e2) {
-                      setErrorJsonQueryString(e2.message);
-                      return;
-                    }
-                    setErrorJsonQueryString("");
-                    setCurrenPage({ ...currentPage, page: 1 });
-                    fetcher.submit(
-                      {
-                        query: jsonQueryString
-                      },
-                      {
-                        method: "POST",
-                        encType: "application/json",
-                        action: `/database/${params.db}/${params.col}`
-                      }
-                    );
-                  },
-                  children: "Execute"
-                }
-              ),
-              errorJsonQueryString != "" && /* @__PURE__ */ jsx(AlertMessage, { message: errorJsonQueryString, onClose: () => setErrorJsonQueryString("") })
-            ] })
-          ] })
+            }
+          ) })
         ] })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "mb-3 bg-neutral-100", children: /* @__PURE__ */ jsx(Accordion, { type: "multiple", children: /* @__PURE__ */ jsxs(AccordionItem, { value: "statistics", className: "pr-0 ", children: [
@@ -3908,10 +5259,10 @@ function CollectionPage() {
         forwardText: "Next page",
         itemsPerPageText: "Items per page:",
         onChange: ({ page, pageSize }) => {
-          setCurrenPage({ page, pageSize });
+          setCurrentPage({ page, pageSize });
         },
-        page: Math.floor(pagination.skip / pagination.limit) + 1,
-        pageSize: Number(pagination.limit),
+        page: currentPage.page,
+        pageSize: currentPage.pageSize,
         pageSizes: [10, 20, 30, 40, 50, 100, 500],
         size: "md",
         totalItems: count
@@ -3933,7 +5284,7 @@ function CollectionPage() {
   ] });
 }
 
-const route2 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route3 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   IdeWithAutocomplete,
   action: action$6,
@@ -4171,7 +5522,7 @@ function DatabasePage() {
   ] });
 }
 
-const route3 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route4 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$5,
   default: DatabasePage,
@@ -5176,7 +6527,7 @@ function Dashboard$3() {
   ] });
 }
 
-const route4 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route5 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$4,
   default: Dashboard$3,
@@ -5330,7 +6681,7 @@ function Dashboard$2() {
   ] });
 }
 
-const route5 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route6 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$3,
   default: Dashboard$2,
@@ -5427,7 +6778,7 @@ function CreateUserRoute() {
   ] });
 }
 
-const route6 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route7 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$2,
   default: CreateUserRoute
@@ -5582,7 +6933,7 @@ function Dashboard$1() {
   ] });
 }
 
-const route7 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route8 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   default: Dashboard$1,
   loader: loader$4
@@ -5595,14 +6946,14 @@ const loader$3 = async ({ request }) => {
   return logout(request);
 };
 
-const route8 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route9 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action: action$1,
   loader: loader$3
 }, Symbol.toStringTag, { value: 'Module' }));
 
 const name = "mongocarbon";
-const version = "0.0.8";
+const version = "0.0.9";
 const sideEffects = false;
 const type = "module";
 const scripts = {
@@ -5617,15 +6968,17 @@ const scripts = {
 	start: "NODE_OPTIONS=--trace-warnings remix-serve ./build/server/index.js",
 	typecheck: "tsc",
 	preinstall: "echo \"Welcome to Mongo Carbon\"",
-	postinstall: "npm run build && node console/install.js",
+	postinstall: "node console/install.js",
 	test: "echo \"Error: No tests are added\""
 };
 const dependencies = {
 	"@codeium/react-code-editor": "^1.0.12",
+	"@fastify/middie": "^9.0.3",
+	"@fastify/static": "^8.2.0",
 	"@json2csv/plainjs": "^7.0.6",
 	"@primer/octicons-react": "^19.14.0",
 	"@primer/react": "^37.8.0",
-	"@prisma/client": "^6.0.0",
+	"@prisma/client": "^6.16.1",
 	"@radix-ui/react-accordion": "^1.2.2",
 	"@radix-ui/react-alert-dialog": "^1.1.4",
 	"@radix-ui/react-aspect-ratio": "^1.1.1",
@@ -5651,9 +7004,9 @@ const dependencies = {
 	"@radix-ui/react-toggle": "^1.1.1",
 	"@radix-ui/react-toggle-group": "^1.1.1",
 	"@radix-ui/react-tooltip": "^1.1.6",
-	"@remix-run/node": "^2.14.0",
-	"@remix-run/react": "^2.14.0",
-	"@remix-run/serve": "^2.14.0",
+	"@remix-run/node": "2.17.1",
+	"@remix-run/react": "2.17.1",
+	"@remix-run/serve": "2.17.1",
 	"app-root-path": "^3.1.0",
 	bcryptjs: "^2.4.3",
 	bson: "^6.10.0",
@@ -5664,6 +7017,9 @@ const dependencies = {
 	dotenv: "^16.4.5",
 	"dotenv-cli": "^7.4.4",
 	"embla-carousel-react": "^8.5.1",
+	fastify: "^5.6.0",
+	"fastify-plugin": "^5.0.1",
+	"get-port": "^7.1.0",
 	"input-otp": "^1.4.1",
 	isbot: "^4.1.0",
 	"lodash.isequal": "^4.5.0",
@@ -5671,7 +7027,7 @@ const dependencies = {
 	mongodb: "^6.10.0",
 	"mongodb-query-parser": "^4.2.6",
 	"next-themes": "^0.4.4",
-	prisma: "^6.0.0",
+	prisma: "^6.16.1",
 	react: "^18.2.0",
 	"react-day-picker": "^9.4.4",
 	"react-dom": "^18.2.0",
@@ -5679,13 +7035,14 @@ const dependencies = {
 	recharts: "^2.15.0",
 	"scroll-into-view-if-needed": "^3.1.0",
 	sonner: "^1.7.1",
+	"source-map-support": "^0.5.21",
 	"tailwind-merge": "^2.5.5",
 	"textarea-caret": "^3.1.0",
 	validator: "^13.12.0",
 	vaul: "^1.1.2"
 };
 const devDependencies = {
-	"@remix-run/dev": "^2.14.0",
+	"@remix-run/dev": "2.17.1",
 	"@types/bcryptjs": "^2.4.6",
 	"@types/react": "^18.2.20",
 	"@types/react-dom": "^18.2.7",
@@ -5773,7 +7130,7 @@ const HeaderAction = React__default.forwardRef(function HeaderAction2({ "aria-la
   );
 });
 const Header = ({ className, children, ...rest }) => {
-  return /* @__PURE__ */ jsx("header", { ...rest, className: cn("flex absolute left-0 w-full items-center justify-between gap-4 px-4 py-2", className), children });
+  return /* @__PURE__ */ jsx("header", { ...rest, className: cn("flex left-0 w-full items-center justify-between gap-4 px-4 py-2", className), children });
 };
 const HeaderNavigation = ({
   "aria-label": ariaLabel,
@@ -5812,7 +7169,7 @@ const HeaderMenuButton = ({
   return /* @__PURE__ */ jsx("button", { ...rest, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy, className, title: ariaLabel, type: "button", children: isActive ? closeIcon : menuIcon });
 };
 
-const Avatar = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Root, { ref, className: cn("relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full", className), ...props }));
+const Avatar = React.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Root, { ref, className: cn("relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full", className), ...props }));
 Avatar.displayName = AvatarPrimitive.Root.displayName;
 const AvatarImage = React.forwardRef(
   ({ className, ...props }, ref) => /* @__PURE__ */ jsx(AvatarPrimitive.Image, { ref, className: cn("aspect-square h-full w-full", className), ...props })
@@ -5859,7 +7216,7 @@ function Dashboard() {
   ] });
 }
 
-const route9 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route10 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   default: Dashboard,
   loader: loader$2
@@ -6256,7 +7613,7 @@ const TreeNode = React__default.forwardRef(
       className,
       disabled ? "disabled opacity-50 cursor-not-allowed" : "",
       icon ? "with-icon" : "",
-      !children ? "hover:bg-tree/10" : "py-0"
+      !children ? "hover:bg-tree/10 cursor-pointer" : "py-0"
     );
     const treeLabelClasses = cn(
       active ? "border-l-4 border-solid border-primary bg-tree" : "border-l-4 border-solid border-transparent hover:bg-tree opacity-70"
@@ -6338,7 +7695,7 @@ const TreeNode = React__default.forwardRef(
     };
     let paddingLeft = depth ? `${depth}rem` : void 0;
     if (!children) {
-      return /* @__PURE__ */ jsx("li", { ...treeNodeProps, className: treeNodeClasses, ref: setRefs, children: /* @__PURE__ */ jsxs("div", { style: { paddingLeft }, className: "flex items-center gap-2 py-2 transition " + treeLabelClasses, ref: currentNodeLabel, children: [
+      return /* @__PURE__ */ jsx("li", { ...treeNodeProps, className: treeNodeClasses, ref: setRefs, children: /* @__PURE__ */ jsxs("div", { style: { paddingLeft }, className: "flex items-center gap-2 py-1 transition " + treeLabelClasses, ref: currentNodeLabel, children: [
         icon,
         label
       ] }) });
@@ -6987,7 +8344,7 @@ function Layout$1() {
                   });
                   navigate(`/database/${database}/${collection.name}`);
                 },
-                icon: /* @__PURE__ */ jsx(DatabaseIcon, {}),
+                icon: /* @__PURE__ */ jsx(DatabaseIcon, { className: "h-3" }),
                 label: collection.name,
                 onToggle: (e, node) => {
                   setCurrent({
@@ -7026,7 +8383,7 @@ function Layout$1() {
         /* @__PURE__ */ jsx("div", { className: "relative top-0 left-0 w-full h-full overflow-auto", children: treeView })
       ] }) }) }) }),
       /* @__PURE__ */ jsxs("div", { className: "relative w-full overflow-hidden transition", children: [
-        /* @__PURE__ */ jsxs(Header, { className: "z-50 bg-white shadow", "aria-label": "Header", children: [
+        /* @__PURE__ */ jsxs(Header, { className: "z-50 h-12 bg-white shadow", "aria-label": "Header", children: [
           /* @__PURE__ */ jsx(SkipToContent, {}),
           /* @__PURE__ */ jsxs(HeaderActions, { children: [
             /* @__PURE__ */ jsx(
@@ -7051,7 +8408,7 @@ function Layout$1() {
             /* @__PURE__ */ jsx(HeaderAction, { "aria-label": "Logout", children: /* @__PURE__ */ jsx(Link, { to: "/logout", children: /* @__PURE__ */ jsx(SignOutIcon, { size: 20 }) }) })
           ] })
         ] }),
-        /* @__PURE__ */ jsx("div", { className: "h-screen overflow-auto", children: /* @__PURE__ */ jsx("div", { className: "pt-12 pb-12 pl-0 pr-0", children: /* @__PURE__ */ jsx("div", { className: "h-full pt-5 mr-0 ", children: /* @__PURE__ */ jsx("div", { className: "px-4 lg:px-8", children: /* @__PURE__ */ jsx(Outlet, {}, pathname + "-content") }) }) }) }),
+        /* @__PURE__ */ jsx("div", { className: "relative flex-1 h-[calc(100vh-3rem)] transition", children: /* @__PURE__ */ jsx("div", { className: "absolute inset-0 pl-0 pr-0 overflow-auto", children: /* @__PURE__ */ jsx("div", { className: "h-full mr-0 ", children: /* @__PURE__ */ jsx("div", { className: "px-4 py-4 lg:px-6", children: /* @__PURE__ */ jsx(Outlet, {}, pathname + "-content") }) }) }) }),
         /* @__PURE__ */ jsx(Footer, {})
       ] })
     ] }),
@@ -7071,7 +8428,7 @@ function Layout$1() {
   ] });
 }
 
-const route10 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route11 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   default: Layout$1,
   loader: loader$1
@@ -7129,7 +8486,7 @@ function Layout() {
   ] });
 }
 
-const route11 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route12 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   default: Layout,
   loader
@@ -7224,13 +8581,13 @@ function LoginRoute() {
   ] }) }) });
 }
 
-const route12 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const route13 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
   action,
   default: LoginRoute
 }, Symbol.toStringTag, { value: 'Module' }));
 
-const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','imports':['/assets/components-BPOIHgDc.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-BpWHqv2o.js','imports':['/assets/components-BPOIHgDc.js','/assets/x-OohQberg.js','/assets/toast-hIcI356p.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js'],'css':['/assets/root-Dciun49d.css']},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-H-1x1CL0.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/collection-CQRtENl6.js','/assets/database-D9MPVr0e.js','/assets/functions-DMKVu1r-.js','/assets/accordion-Cy3lx65E.js','/assets/alert-Do9tp9-j.js','/assets/input-ChpOE9Lf.js','/assets/select-Cem4k-Od.js','/assets/table-CX2GO18n.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/x-OohQberg.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-Dmn7Omo_.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/functions-DMKVu1r-.js','/assets/collection-CQRtENl6.js','/assets/accordion-Cy3lx65E.js','/assets/table-CX2GO18n.js','/assets/index-CZUknZXM.js','/assets/x-OohQberg.js','/assets/select-Cem4k-Od.js','/assets/utils-DcAaEMf9.js','/assets/input-ChpOE9Lf.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-CRcUl7DD.js','imports':['/assets/components-BPOIHgDc.js','/assets/functions-DMKVu1r-.js','/assets/button-ZrFu6W_T.js','/assets/database-D9MPVr0e.js','/assets/select-Cem4k-Od.js','/assets/alert-Do9tp9-j.js','/assets/input-ChpOE9Lf.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/x-OohQberg.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-DFD7X86d.js','imports':['/assets/components-BPOIHgDc.js','/assets/connection-DQWmmeEw.js','/assets/logo-COugf1Vw.js','/assets/accordion-Cy3lx65E.js','/assets/button-ZrFu6W_T.js','/assets/actionable-notification-DDLqphrE.js','/assets/x-OohQberg.js','/assets/index-CZUknZXM.js','/assets/select-Cem4k-Od.js','/assets/utils-DcAaEMf9.js','/assets/input-ChpOE9Lf.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-63As5LFj.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/actionable-notification-DDLqphrE.js','/assets/input-ChpOE9Lf.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-BRASXI-l.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/logo-COugf1Vw.js','/assets/input-ChpOE9Lf.js','/assets/actionable-notification-DDLqphrE.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js','/assets/alert-Do9tp9-j.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-AIFGYrER.js','imports':['/assets/components-BPOIHgDc.js','/assets/table-CX2GO18n.js','/assets/utils-DcAaEMf9.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-D0ECua74.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-D2uRlujz.js','imports':['/assets/components-BPOIHgDc.js','/assets/avatar-iLqlscfN.js','/assets/logo-COugf1Vw.js','/assets/button-ZrFu6W_T.js','/assets/package-B8KgwFrP.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-DVIsT9j6.js','imports':['/assets/components-BPOIHgDc.js','/assets/package-B8KgwFrP.js','/assets/button-ZrFu6W_T.js','/assets/avatar-iLqlscfN.js','/assets/connection-DQWmmeEw.js','/assets/database-D9MPVr0e.js','/assets/github_widget-R1gwNBdG.js','/assets/logo-COugf1Vw.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js','/assets/input-ChpOE9Lf.js','/assets/select-Cem4k-Od.js','/assets/x-OohQberg.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-DfLKPCel.js','imports':['/assets/components-BPOIHgDc.js','/assets/avatar-iLqlscfN.js','/assets/logo-COugf1Vw.js','/assets/button-ZrFu6W_T.js','/assets/package-B8KgwFrP.js','/assets/utils-DcAaEMf9.js','/assets/index-CZUknZXM.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-_Arp4IVU.js','imports':['/assets/components-BPOIHgDc.js','/assets/button-ZrFu6W_T.js','/assets/logo-COugf1Vw.js','/assets/input-ChpOE9Lf.js','/assets/x-OohQberg.js','/assets/toast-hIcI356p.js','/assets/github_widget-R1gwNBdG.js','/assets/package-B8KgwFrP.js','/assets/index-CZUknZXM.js','/assets/utils-DcAaEMf9.js'],'css':[]}},'url':'/assets/manifest-61bf3a2a.js','version':'61bf3a2a'};
+const serverManifest = {'entry':{'module':'/assets/entry.client-DufW-iuB.js','imports':['/assets/components-DSNIqDDq.js'],'css':[]},'routes':{'root':{'id':'root','parentId':undefined,'path':'','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/root-CGsogdSo.js','imports':['/assets/components-DSNIqDDq.js','/assets/x-BntEkNr0.js','/assets/toast-Dkcvh1Y8.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js'],'css':['/assets/root-BUJFoVV0.css']},'routes/[.]well-known.appspecific.$filename':{'id':'routes/[.]well-known.appspecific.$filename','parentId':'root','path':'.well-known/appspecific/:filename','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_._well-known.appspecific._filename-D0ECua74.js','imports':[],'css':[]},'routes/_user.database.$db._index':{'id':'routes/_user.database.$db._index','parentId':'routes/_user','path':'database/:db','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._index-Bp387qf2.js','imports':['/assets/components-DSNIqDDq.js','/assets/button-DJCNRe4M.js','/assets/collection-B4acNlnq.js','/assets/database-DpviG8LB.js','/assets/functions-CwXrBDO5.js','/assets/accordion-CsVaAh9m.js','/assets/alert-B9YY_acf.js','/assets/input-DUDTp-v9.js','/assets/select-Bg-tQMCJ.js','/assets/table-nCuF7d1D.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js','/assets/x-BntEkNr0.js'],'css':[]},'routes/_user.database.$db.$col':{'id':'routes/_user.database.$db.$col','parentId':'routes/_user','path':'database/:db/:col','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._db._col-0NqW3x73.js','imports':['/assets/components-DSNIqDDq.js','/assets/button-DJCNRe4M.js','/assets/functions-CwXrBDO5.js','/assets/select-Bg-tQMCJ.js','/assets/createLucideIcon-Dkhr3css.js','/assets/collection-B4acNlnq.js','/assets/accordion-CsVaAh9m.js','/assets/table-nCuF7d1D.js','/assets/x-BntEkNr0.js','/assets/utils-DcAaEMf9.js','/assets/input-DUDTp-v9.js'],'css':[]},'routes/_user.database._index':{'id':'routes/_user.database._index','parentId':'routes/_user','path':'database','index':true,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user.database._index-B5NGZDjs.js','imports':['/assets/components-DSNIqDDq.js','/assets/functions-CwXrBDO5.js','/assets/button-DJCNRe4M.js','/assets/database-DpviG8LB.js','/assets/select-Bg-tQMCJ.js','/assets/alert-B9YY_acf.js','/assets/input-DUDTp-v9.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js','/assets/x-BntEkNr0.js'],'css':[]},'routes/_base.connections':{'id':'routes/_base.connections','parentId':'routes/_base','path':'connections','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.connections-BX_afvEG.js','imports':['/assets/components-DSNIqDDq.js','/assets/connection-arF7lm49.js','/assets/logo-CdeaKns9.js','/assets/accordion-CsVaAh9m.js','/assets/button-DJCNRe4M.js','/assets/actionable-notification-m4TMj11n.js','/assets/x-BntEkNr0.js','/assets/createLucideIcon-Dkhr3css.js','/assets/select-Bg-tQMCJ.js','/assets/utils-DcAaEMf9.js','/assets/input-DUDTp-v9.js','/assets/alert-B9YY_acf.js'],'css':[]},'routes/_base.profile':{'id':'routes/_base.profile','parentId':'routes/_base','path':'profile','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.profile-Bg-SPysS.js','imports':['/assets/components-DSNIqDDq.js','/assets/button-DJCNRe4M.js','/assets/actionable-notification-m4TMj11n.js','/assets/input-DUDTp-v9.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js','/assets/alert-B9YY_acf.js'],'css':[]},'routes/_base.create':{'id':'routes/_base.create','parentId':'routes/_base','path':'create','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base.create-Dc0dQC1X.js','imports':['/assets/components-DSNIqDDq.js','/assets/button-DJCNRe4M.js','/assets/logo-CdeaKns9.js','/assets/input-DUDTp-v9.js','/assets/actionable-notification-m4TMj11n.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js','/assets/alert-B9YY_acf.js'],'css':[]},'routes/_user._index':{'id':'routes/_user._index','parentId':'routes/_user','path':undefined,'index':true,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user._index-BViByy82.js','imports':['/assets/components-DSNIqDDq.js','/assets/table-nCuF7d1D.js','/assets/utils-DcAaEMf9.js'],'css':[]},'routes/logout':{'id':'routes/logout','parentId':'root','path':'logout','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/logout-l0sNRNKZ.js','imports':[],'css':[]},'routes/_base':{'id':'routes/_base','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_base-B0faaPe-.js','imports':['/assets/components-DSNIqDDq.js','/assets/avatar-CnCETVa5.js','/assets/logo-CdeaKns9.js','/assets/button-DJCNRe4M.js','/assets/package-kS5ZA5SB.js','/assets/utils-DcAaEMf9.js','/assets/createLucideIcon-Dkhr3css.js'],'css':[]},'routes/_user':{'id':'routes/_user','parentId':'root','path':undefined,'index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/_user-Dk_1a7Wm.js','imports':['/assets/components-DSNIqDDq.js','/assets/package-kS5ZA5SB.js','/assets/button-DJCNRe4M.js','/assets/avatar-CnCETVa5.js','/assets/connection-arF7lm49.js','/assets/database-DpviG8LB.js','/assets/github_widget-Bwhxnhr2.js','/assets/logo-CdeaKns9.js','/assets/utils-DcAaEMf9.js','/assets/createLucideIcon-Dkhr3css.js','/assets/input-DUDTp-v9.js','/assets/select-Bg-tQMCJ.js','/assets/x-BntEkNr0.js'],'css':[]},'routes/error':{'id':'routes/error','parentId':'root','path':'error','index':undefined,'caseSensitive':undefined,'hasAction':false,'hasLoader':true,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/error-CynoC0E5.js','imports':['/assets/components-DSNIqDDq.js','/assets/avatar-CnCETVa5.js','/assets/logo-CdeaKns9.js','/assets/button-DJCNRe4M.js','/assets/package-kS5ZA5SB.js','/assets/utils-DcAaEMf9.js','/assets/createLucideIcon-Dkhr3css.js'],'css':[]},'routes/login':{'id':'routes/login','parentId':'root','path':'login','index':undefined,'caseSensitive':undefined,'hasAction':true,'hasLoader':false,'hasClientAction':false,'hasClientLoader':false,'hasErrorBoundary':false,'module':'/assets/login-Bh7zx8CF.js','imports':['/assets/components-DSNIqDDq.js','/assets/button-DJCNRe4M.js','/assets/logo-CdeaKns9.js','/assets/input-DUDTp-v9.js','/assets/x-BntEkNr0.js','/assets/toast-Dkcvh1Y8.js','/assets/github_widget-Bwhxnhr2.js','/assets/package-kS5ZA5SB.js','/assets/createLucideIcon-Dkhr3css.js','/assets/utils-DcAaEMf9.js'],'css':[]}},'url':'/assets/manifest-eeafa868.js','version':'eeafa868'};
 
 /**
        * `mode` is only relevant for the old Remix compiler but
@@ -7252,13 +8609,21 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           caseSensitive: undefined,
           module: route0
         },
+  "routes/[.]well-known.appspecific.$filename": {
+          id: "routes/[.]well-known.appspecific.$filename",
+          parentId: "root",
+          path: ".well-known/appspecific/:filename",
+          index: undefined,
+          caseSensitive: undefined,
+          module: route1
+        },
   "routes/_user.database.$db._index": {
           id: "routes/_user.database.$db._index",
           parentId: "routes/_user",
           path: "database/:db",
           index: true,
           caseSensitive: undefined,
-          module: route1
+          module: route2
         },
   "routes/_user.database.$db.$col": {
           id: "routes/_user.database.$db.$col",
@@ -7266,7 +8631,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "database/:db/:col",
           index: undefined,
           caseSensitive: undefined,
-          module: route2
+          module: route3
         },
   "routes/_user.database._index": {
           id: "routes/_user.database._index",
@@ -7274,7 +8639,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "database",
           index: true,
           caseSensitive: undefined,
-          module: route3
+          module: route4
         },
   "routes/_base.connections": {
           id: "routes/_base.connections",
@@ -7282,7 +8647,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "connections",
           index: undefined,
           caseSensitive: undefined,
-          module: route4
+          module: route5
         },
   "routes/_base.profile": {
           id: "routes/_base.profile",
@@ -7290,7 +8655,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "profile",
           index: undefined,
           caseSensitive: undefined,
-          module: route5
+          module: route6
         },
   "routes/_base.create": {
           id: "routes/_base.create",
@@ -7298,7 +8663,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "create",
           index: undefined,
           caseSensitive: undefined,
-          module: route6
+          module: route7
         },
   "routes/_user._index": {
           id: "routes/_user._index",
@@ -7306,7 +8671,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: undefined,
           index: true,
           caseSensitive: undefined,
-          module: route7
+          module: route8
         },
   "routes/logout": {
           id: "routes/logout",
@@ -7314,7 +8679,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "logout",
           index: undefined,
           caseSensitive: undefined,
-          module: route8
+          module: route9
         },
   "routes/_base": {
           id: "routes/_base",
@@ -7322,7 +8687,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: undefined,
           index: undefined,
           caseSensitive: undefined,
-          module: route9
+          module: route10
         },
   "routes/_user": {
           id: "routes/_user",
@@ -7330,7 +8695,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: undefined,
           index: undefined,
           caseSensitive: undefined,
-          module: route10
+          module: route11
         },
   "routes/error": {
           id: "routes/error",
@@ -7338,7 +8703,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "error",
           index: undefined,
           caseSensitive: undefined,
-          module: route11
+          module: route12
         },
   "routes/login": {
           id: "routes/login",
@@ -7346,7 +8711,7 @@ const serverManifest = {'entry':{'module':'/assets/entry.client-D-yrOLDe.js','im
           path: "login",
           index: undefined,
           caseSensitive: undefined,
-          module: route12
+          module: route13
         }
       };
 

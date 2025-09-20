@@ -181,7 +181,7 @@ export default function Layout() {
                                     });
                                     navigate(`/database/${database}/${collection.name}`);
                                 }}
-                                icon={<DatabaseIcon />}
+                                icon={<DatabaseIcon className="h-3" />}
                                 key={`${database}-${collection.name}`}
                                 label={collection.name}
                                 onToggle={(e, node) => {
@@ -241,7 +241,7 @@ export default function Layout() {
                     </SidebarContent>
                 </Sidebar>
                 <div className="relative w-full overflow-hidden transition">
-                    <Header className="z-50 bg-white shadow" aria-label="Header">
+                    <Header className="z-50 h-12 bg-white shadow" aria-label="Header">
                         <SkipToContent />
                         <HeaderActions>
                             <HeaderMenuButton
@@ -261,9 +261,9 @@ export default function Layout() {
                                     <SwitchConnection current={loaderData.connection} connections={loaderData.connections} />
                                 </HeaderMenuItem>
                             </HeaderNavigation>
-                            <HeaderNavigation aria-label="New Database">
+                            {/* <HeaderNavigation aria-label="New Database">
                                 <HeaderMenuItem onClick={onCreateDatabase}>New Database</HeaderMenuItem>
-                            </HeaderNavigation>
+                            </HeaderNavigation> */}
                         </HeaderActions>
                         <HeaderActions>
                             <GithubButton repo="n-for-all/mongocarbon" version={packageJson.version} title={"MongoCarbon"} />
@@ -282,10 +282,10 @@ export default function Layout() {
                         </HeaderActions>
                     </Header>
 
-                    <div className="h-screen overflow-auto">
-                        <div className="pt-12 pb-12 pl-0 pr-0">
-                            <div className="h-full pt-5 mr-0 ">
-                                <div className="px-4 lg:px-8">
+                    <div className="relative flex-1 h-[calc(100vh-3rem)] transition">
+                        <div className="absolute inset-0 pl-0 pr-0 overflow-auto">
+                            <div className="h-full mr-0 ">
+                                <div className="px-4 py-4 lg:px-6">
                                     <Outlet key={pathname + "-content"} />
                                 </div>
                             </div>

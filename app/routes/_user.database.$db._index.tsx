@@ -1,9 +1,11 @@
 import { PlusIcon, ArrowRightIcon, TrashIcon, SortAscIcon, SortDescIcon, DatabaseIcon } from "@primer/octicons-react";
 import { ActionFunction, LoaderFunction } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
+import { HardDrive, Library, Settings } from "lucide-react";
 import { useState, SyntheticEvent } from "react";
 import { CollectionAddModal, CollectionDeleteModal } from "~/components/collection";
 import { DatabaseDeleteModal } from "~/components/database";
+import LatencyHistograms from "~/components/histogram";
 import Title from "~/components/title";
 import config from "~/config";
 import { Collection } from "~/lib/data/collection";
@@ -17,6 +19,71 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "~/ui/select";
 import { Table, TableBody, TableCell, TableRow } from "~/ui/table";
 import { convertBytes, isValidCollectionName, numberWithCommas } from "~/utils/functions";
 import { getUserSession } from "~/utils/session.server";
+
+type HistogramEntry = {
+    micros: number;
+    count: number;
+};
+
+type HistogramStats = {
+    histogram: HistogramEntry[];
+    latency?: number;
+    ops?: number;
+    queryableEncryptionLatencyMicros?: number;
+};
+
+function getAverageHistogram(collectionList: any[]): {
+    commands: HistogramStats;
+    reads: HistogramStats;
+    writes: HistogramStats;
+    transactions: HistogramStats;
+} {
+    const types = ["commands", "reads", "writes", "transactions"] as const;
+
+    // Gather all unique micros values for each type
+    const microsSets: Record<string, Set<number>> = {};
+    types.forEach((type) => {
+        microsSets[type] = new Set<number>();
+        collectionList.forEach((col) => {
+            col.stats.latencyStats[type].histogram.forEach((entry: any) => {
+                microsSets[type].add(entry.micros);
+            });
+        });
+    });
+
+    // For each type, build the combined histogram and average stats
+    const result: Record<string, HistogramStats> = {};
+    types.forEach((type) => {
+        const microsBuckets = Array.from(microsSets[type]).sort((a, b) => a - b);
+        const histogram: HistogramEntry[] = microsBuckets.map((micros) => {
+            let countSum = 0;
+            collectionList.forEach((col) => {
+                countSum += col.stats.latencyStats[type].histogram.find((h: any) => h.micros === micros)?.count || 0;
+            });
+            return { micros, count: countSum };
+        });
+
+        // Calculate averages for latency, ops, encryption latency
+        const n = collectionList.length;
+        const latency = collectionList.reduce((sum, col) => sum + (col.stats.latencyStats[type].latency || 0), 0) / (n || 1);
+        const ops = collectionList.reduce((sum, col) => sum + (col.stats.latencyStats[type].ops || 0), 0) / (n || 1);
+        const queryableEncryptionLatencyMicros = collectionList.reduce((sum, col) => sum + (col.stats.latencyStats[type].queryableEncryptionLatencyMicros || 0), 0) / (n || 1);
+
+        result[type] = {
+            histogram,
+            latency,
+            ops,
+            queryableEncryptionLatencyMicros,
+        };
+    });
+
+    return result as {
+        commands: HistogramStats;
+        reads: HistogramStats;
+        writes: HistogramStats;
+        transactions: HistogramStats;
+    };
+}
 
 export const loader: LoaderFunction = async ({ request, params }) => {
     if (!params.db) {
@@ -131,6 +198,7 @@ export default function DatabasePage() {
     const [collectionDelete, setCollectionDelete] = useState<string | null>(null);
 
     const stats = loaderData?.stats;
+    console.log(stats.collectionList[0].stats.latencyStats.commands.histogram);
     if (loaderData?.error) {
         return (
             <Alert>
@@ -199,6 +267,8 @@ export default function DatabasePage() {
         default:
             break;
     }
+
+    const histogram = getAverageHistogram(stats.collectionList);
     return (
         <>
             <div className="database-page">
@@ -273,6 +343,134 @@ export default function DatabasePage() {
                             }}></Button>
                     </div>
                 </div>
+                <div>
+                    <LatencyHistograms className="px-4 py-4 mb-4 text-xs bg-neutral-100" stats={histogram} />
+                </div>
+                <Accordion type="multiple" className="mb-4 bg-neutral-100">
+                    <AccordionItem value="stats" title="More Details" className="pr-0 ">
+                        <AccordionTrigger className="px-4 border-t border-solid border-neutral-200">
+                            <span className="font-medium">
+                                <HardDrive className="inline mb-1 mr-1" size={14} />
+                                Database Details</span>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-0">
+                            <Table className="text-sm">
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Collections </strong>
+                                            <small className="block">(incl. system.namespaces)</small>
+                                        </TableCell>
+                                        <TableCell>{stats.collections}</TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Data Size</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.dataSize}</TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Storage Size</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.storageSize}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Views</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.views}</TableCell>
+                                    </TableRow>
+
+                                    {/* <TableRow>
+							<TableCell>
+								<strong>File Size (on disk)</strong>
+							</TableCell>
+							<TableCell>{stats.fileSize}</TableCell>
+						</TableRow> */}
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Avg Obj Size</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.avgObjSize}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Objects</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.objects}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Operation Time</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.operationTime}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Cluster Time</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.clusterTime}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Extents</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.numExtents}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Extents Free List</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.extentFreeListNum}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Indexes</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.indexes}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Index Size</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.indexSize}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>Data File Version</strong>
+                                        </TableCell>
+                                        <TableCell>{stats.dataFileVersion}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>File System Used Size</strong>
+                                        </TableCell>
+                                        <TableCell>{convertBytes(stats.fsUsedSize)}</TableCell>
+                                    </TableRow>
+
+                                    <TableRow>
+                                        <TableCell>
+                                            <strong>File System Total Size</strong>
+                                        </TableCell>
+                                        <TableCell>{convertBytes(stats.fsTotalSize)}</TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                        </AccordionContent>
+                    </AccordionItem>
+                </Accordion>
                 {stats.collectionList.map((collection: any, index: number) => {
                     if (search && search.trim() != "" && !(collection.name.toLowerCase().indexOf(search.toLowerCase()) == 0)) {
                         return null;
@@ -296,7 +494,7 @@ export default function DatabasePage() {
                                         Delete
                                     </Button>
                                     <Button variant={"outline"} icon={<ArrowRightIcon />} size="sm" href={`/database/${stats.name}/${collection.name}`}>
-                                        View
+                                        Manage
                                     </Button>
                                 </div>
                             </div>
@@ -328,6 +526,9 @@ export default function DatabasePage() {
                                         <span className="font-medium">More Details</span>
                                     </AccordionTrigger>
                                     <AccordionContent className="px-0">
+                                        <div>
+                                            <LatencyHistograms className="px-4 py-4 text-xs" stats={collection.stats.latencyStats} />
+                                        </div>
                                         <div className="flex flex-col items-start w-full pb-4 lg:flex-row">
                                             <div className="flex-1 w-full">
                                                 <Table className="text-md">
@@ -400,126 +601,6 @@ export default function DatabasePage() {
                         </div>
                     );
                 })}
-                <div className="flex items-center justify-between pb-4 mt-10">
-                    <div className="">
-                        <h4 className="text-xl font-medium">Details</h4>
-                        <p className="text-sm">Collections: {stats.collections}</p>
-                    </div>
-                </div>
-                <Table className="text-md">
-                    <TableBody>
-                        <TableRow>
-                            <TableCell>
-                                <strong>Collections </strong>
-                                <small className="block">(incl. system.namespaces)</small>
-                            </TableCell>
-                            <TableCell>{stats.collections}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                            <TableCell>
-                                <strong>Data Size</strong>
-                            </TableCell>
-                            <TableCell>{stats.dataSize}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                            <TableCell>
-                                <strong>Storage Size</strong>
-                            </TableCell>
-                            <TableCell>{stats.storageSize}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Views</strong>
-                            </TableCell>
-                            <TableCell>{stats.views}</TableCell>
-                        </TableRow>
-
-                        {/* <TableRow>
-							<TableCell>
-								<strong>File Size (on disk)</strong>
-							</TableCell>
-							<TableCell>{stats.fileSize}</TableCell>
-						</TableRow> */}
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Avg Obj Size</strong>
-                            </TableCell>
-                            <TableCell>{stats.avgObjSize}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Objects</strong>
-                            </TableCell>
-                            <TableCell>{stats.objects}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Operation Time</strong>
-                            </TableCell>
-                            <TableCell>{stats.operationTime}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Cluster Time</strong>
-                            </TableCell>
-                            <TableCell>{stats.clusterTime}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Extents</strong>
-                            </TableCell>
-                            <TableCell>{stats.numExtents}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Extents Free List</strong>
-                            </TableCell>
-                            <TableCell>{stats.extentFreeListNum}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Indexes</strong>
-                            </TableCell>
-                            <TableCell>{stats.indexes}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Index Size</strong>
-                            </TableCell>
-                            <TableCell>{stats.indexSize}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>Data File Version</strong>
-                            </TableCell>
-                            <TableCell>{stats.dataFileVersion}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>File System Used Size</strong>
-                            </TableCell>
-                            <TableCell>{convertBytes(stats.fsUsedSize)}</TableCell>
-                        </TableRow>
-
-                        <TableRow>
-                            <TableCell>
-                                <strong>File System Total Size</strong>
-                            </TableCell>
-                            <TableCell>{convertBytes(stats.fsTotalSize)}</TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
             </div>
             <CollectionAddModal
                 open={isAdd}

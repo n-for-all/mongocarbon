@@ -86,7 +86,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ className, children, ...rest }) => {
     return (
-        <header {...rest} className={cn("flex absolute left-0 w-full items-center justify-between gap-4 px-4 py-2", className)}>
+        <header {...rest} className={cn("flex left-0 w-full items-center justify-between gap-4 px-4 py-2", className)}>
             {children}
         </header>
     );

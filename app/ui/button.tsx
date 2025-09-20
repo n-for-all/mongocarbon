@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "./lib/utils";
 import { Tooltip } from "./tooltip";
+import { Loader2 } from "lucide-react";
 
 const buttonVariants = cva(
     "inline-flex items-center justify-center gap-2 whitespace-nowrap hover:cursor-pointer text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -83,7 +84,7 @@ const Button = React.forwardRef<HTMLButtonElement | HTMLAnchorElement, ButtonAnc
                 default:
                     loaderSize = "h-5 w-5";
             }
-            loader = <span className={"animate-spin border-t-2 border-b-2 border-white rounded-full " + loaderSize}></span>;
+            loader = <Loader2 className={"animate-spin " + loaderSize}></Loader2>;
         } else {
             loader = icon ? <span className={hasIconOnly ? "" : iconPosition == "right" ? "ml-4" : "mr-4"}>{icon}</span> : null;
         }

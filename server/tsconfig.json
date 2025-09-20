@@ -1,0 +1,16 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "include": ["./**/*.ts"],
+    "exclude": ["node_modules"],
+    "compilerOptions": {
+        "lib": ["DOM", "DOM.Iterable", "ES2022"],
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "target": "ES2022",
+        "noEmit": false,
+        "allowJs": true,
+        "outDir": "../build/fastify/"
+    }
+}

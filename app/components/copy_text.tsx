@@ -5,6 +5,7 @@ import { useState } from "react";
 interface TitleWithCopy {
     text?: string;
     className?: string;
+    iconClassName?: string;
 }
 
 interface ButtonWithCopy {
@@ -12,7 +13,7 @@ interface ButtonWithCopy {
     [x: string]: any;
 }
 
-export const CopyText: React.FC<TitleWithCopy> = ({ text, className }) => {
+export const CopyText: React.FC<TitleWithCopy> = ({ text, className, iconClassName }) => {
     const [copied, setCopied] = useState(false);
     const handleCopy = () => {
         if (!text) {
@@ -28,7 +29,7 @@ export const CopyText: React.FC<TitleWithCopy> = ({ text, className }) => {
 
     return (
         <span className={"cursor-pointer" + (className ? " " + className : "")} onClick={handleCopy}>
-            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? <CheckIcon className={iconClassName} /> : <CopyIcon className={iconClassName} />}
         </span>
     );
 };

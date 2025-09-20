@@ -125,7 +125,7 @@ function renderSelectItems(total) {
     const itemArr: React.ReactNode[] = [];
     while (counter <= total) {
         itemArr.push(
-            <SelectItem key={counter} value={counter}>
+            <SelectItem key={counter} value={counter.toString()}>
                 {String(counter)}
             </SelectItem>
         );
@@ -304,11 +304,6 @@ const Pagination = React.forwardRef(function Pagination(
             <div className={`flex gap-2 pl-4`}>
                 <label className={`whitespace-nowrap flex items-center`}>{itemsPerPageText}</label>
                 <Select
-                    className={`select__item-count`}
-                    labelText=""
-                    hideLabel
-                    noLabel
-                    inline
                     onValueChange={handleSizeChange}
                     disabled={pageSizeInputDisabled || disabled}
                     value={pageSize}>
@@ -338,11 +333,8 @@ const Pagination = React.forwardRef(function Pagination(
                 ) : (
                     <div className="flex gap-1 pr-4">
                         <Select
-                            labelText={`Page of ${totalPages} pages`}
-                            inline
-                            hideLabel
                             onValueChange={handlePageInputChange}
-                            value={page}
+                            value={page.toString()}
                             disabled={pageInputDisabled || disabled}>
                             <SelectTrigger className={`border-0 shadow-none`}>{page}</SelectTrigger>
                             <SelectContent>{selectItems}</SelectContent>

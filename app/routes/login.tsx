@@ -24,12 +24,16 @@ type ActionResponse = {
 export const action: ActionFunction = async ({ request }): Promise<TypedResponse<ActionResponse>> => {
     try {
         const form = await request.formData();
+        // console.log("form", request);
         const username = form.get("username");
         const password = form.get("password");
         const redirectTo = form.get("redirectTo") || "/";
+        console.log("username, password, redirectTo", username, password, redirectTo);
         if (typeof username !== "string" || typeof password !== "string" || typeof redirectTo !== "string") {
             return Response.json({
-                formError: `Form not submitted correctly.`,
+                status: "error",
+                message: `The Username and Password combination is incorrect`,
+                details: { username, password, redirectTo },
             });
         }
         const errors = {
@@ -78,10 +82,11 @@ export default function LoginRoute() {
         <>
             <div className="flex items-center justify-center h-screen">
                 <div className="w-full max-w-md mx-auto">
-                    <Logo className={"h-10 mx-auto"} />
+                    <Logo className={"h-10 mx-auto"} /> 
                     <div className="w-full p-10 mt-5 border border-solid bg-neutral-50 border-neutral-100">
                         <h3 className="block mb-1 text-3xl font-bold">Login</h3>
                         <small className="block mb-6 text-xs opacity-50 leading-1">Please enter your username and password below:</small>
+                        {actionData?.status == "error" && actionData?.message && <div className="px-3 py-2 mb-4 text-sm text-red-600 border border-red-200 rounded bg-red-50">{actionData.message}</div>}
                         <Form method="post">
                             <div className="flex flex-col gap-10">
                                 <Input

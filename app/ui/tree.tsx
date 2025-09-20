@@ -358,7 +358,7 @@ const TreeNode = React.forwardRef<HTMLLIElement, TreeNodeProps>(
             className,
             disabled ? "disabled opacity-50 cursor-not-allowed" : "",
             icon ? "with-icon" : "",
-            !children ? "hover:bg-tree/10" : "py-0"
+            !children ? "hover:bg-tree/10 cursor-pointer" : "py-0"
         );
         const treeLabelClasses = cn(
             active ? "border-l-4 border-solid border-primary bg-tree" : "border-l-4 border-solid border-transparent hover:bg-tree opacity-70"
@@ -456,7 +456,7 @@ const TreeNode = React.forwardRef<HTMLLIElement, TreeNodeProps>(
         if (!children) {
             return (
                 <li {...treeNodeProps} className={treeNodeClasses} ref={setRefs}>
-                    <div style={{ paddingLeft }} className={"flex items-center gap-2 py-2 transition " + treeLabelClasses} ref={currentNodeLabel}>
+                    <div style={{ paddingLeft }} className={"flex items-center gap-2 py-1 transition " + treeLabelClasses} ref={currentNodeLabel}>
                         {icon}
                         {label}
                     </div>
