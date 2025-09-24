@@ -81,7 +81,7 @@ export default function SchemaString({ data }: SchemaStringProps) {
                     </div>
                 </div>
             </div>
-            <div className="flex items-center mb-2 other-row">
+            <div className="flex items-center mb-2">
                 <div className="flex items-center whitespace-nowrap">
                     {LocaleProvider("enum")}
                     <Checkbox labelText="" checked={checked} onCheckedChange={handleCheckBox} className="ml-2" />:

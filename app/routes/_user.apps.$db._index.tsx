@@ -139,7 +139,7 @@ enum sortingSelect {
     "index-size" = "Total Index Size",
 }
 
-export default function DatabasePage() {
+export default function AppPage() {
     const params = useParams();
     const [data, setData] = useState<LoaderData | null>(null);
     const [sort, setSort] = useState("");
@@ -148,6 +148,8 @@ export default function DatabasePage() {
 
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedApiKeyId, setSelectedApiKeyId] = useState<string | null>(null);
+
+    const [openAccordions, setOpenAccordions] = useState<Record<string, boolean>>({});
 
     const apiKeyFetcher = useFetcher<{
         token?: string;
@@ -223,6 +225,25 @@ export default function DatabasePage() {
     useEffect(() => {
         refreshData();
     }, [params.db]);
+
+    useEffect(() => {
+        if (data?.stats?.collectionList) {
+            const visibleCollections = data.stats.collectionList
+                .filter((collection: any) => !search || collection.name.toLowerCase().startsWith(search.toLowerCase()))
+                .map((collection: any) => collection.name);
+            setOpenAccordions((prev) => {
+                const updated: Record<string, boolean> = {};
+                visibleCollections.forEach((name) => {
+                    updated[name] = prev[name] || false;
+                });
+                return updated;
+            });
+        }
+    }, [sort, direction, search, data?.stats?.collectionList]);
+
+    const handleAccordionChange = (name: string, open: boolean) => {
+        setOpenAccordions((prev) => ({ ...prev, [name]: open }));
+    };
 
     if (fetcher.data?.status == "error") {
         return (
@@ -336,7 +357,7 @@ export default function DatabasePage() {
                                             {sortingSelect[key]}
                                         </SelectItem>
                                     );
-                                })}
+                                })} 
                             </SelectContent>
                         </Select>
                         <Button
@@ -416,12 +437,16 @@ export default function DatabasePage() {
                                     <span className="block ">Documents</span>
                                 </div>
                             </div>
-                            <Accordion type="multiple">
+                            <Accordion
+                                type="multiple"
+                                value={openAccordions[collection.name] ? ["stats"] : []}
+                                onValueChange={(values) => handleAccordionChange(collection.name, values.includes("stats"))}
+                            >
                                 <AccordionItem value="stats" title="Endpoints" className="pr-0 ">
                                     <AccordionTrigger className="px-4 border-t border-solid border-neutral-200">
                                         <span className="font-medium">Endpoints</span>
                                     </AccordionTrigger>
-                                    <AccordionContent className="px-0">
+                                    <AccordionContent className="px-0 pb-0">
                                         <Endpoints
                                             collection={collection.name}
                                             endpoints={[]}

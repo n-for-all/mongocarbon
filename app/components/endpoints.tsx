@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Table, TableBody, TableCell, TableRow } from "~/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "~/ui/select";
 import { Button } from "~/ui/button";
 import { Input } from "~/ui/input";
 import { Switch } from "~/ui/switch";
-import { Trash } from "lucide-react";
+import { Braces, Edit, FileJson2, Link2, Pen, Settings2, Trash } from "lucide-react";
 import ValidationSchemaEditor from "./validation";
 import { SchemaJson } from "./json-schema";
+import Modal from "~/ui/modal";
+import ValidationManager from "./validation-manager";
 
 type Endpoint = {
     method: string;
@@ -15,6 +17,10 @@ type Endpoint = {
     permission: string;
     active: boolean;
     custom?: boolean;
+    authorization?: boolean;
+    validation?: object;
+    logic?: string;
+    response?: object;
 };
 
 type EndpointsProps = {
@@ -52,11 +58,11 @@ function mergeEndpoints(name: string, existing: Endpoint[] = []) {
 
 export default function Endpoints({ collection, endpoints: collectionEndpoints, onChange }: EndpointsProps) {
     const [endpoints, setEndpoints] = useState<Endpoint[]>(mergeEndpoints(collection, collectionEndpoints));
-    const [updates, setUpdates] = useState(endpoints || {});
+    const [validationEndpoint, setValidationEndpoint] = useState<Endpoint | null>(null);
 
     return (
-        <div>
-            <SchemaJson
+        <div className="pt-1 bg-white">
+            {/* <SchemaJson
                 data={{
                     $schema: "http://json-schema.org/draft/2020-12/schema",
                     type: "object",
@@ -123,7 +129,7 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                     },
                     required: ["user", "role"],
                 }}
-            />
+            /> */}
             {/* <ValidationSchemaEditor
                 value={{
                     bsonType: "object",
@@ -146,9 +152,9 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                     },
                 }}
             /> */}
-            <Table className="">
+            <Table className="border bg-neutral-100">
                 <TableBody>
-                    <TableRow>
+                    <TableRow className="border-b border-neutral-200 bg-neutral-50">
                         <TableCell className="font-bold">Enabled</TableCell>
                         <TableCell className="font-bold">Method</TableCell>
                         <TableCell className="font-bold">Endpoint</TableCell>
@@ -157,8 +163,8 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                         <TableCell className="font-bold"></TableCell>
                     </TableRow>
                     {endpoints.map((ep, idx) => (
-                        <>
-                            <TableRow key={idx}>
+                        <Fragment key={idx}>
+                            <TableRow key={idx} className="border-b-0">
                                 <TableCell className="">
                                     <div className="flex items-center">
                                         <Switch
@@ -180,9 +186,8 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                                             const updated = [...endpoints];
                                             updated[idx].method = value;
                                             setEndpoints(updated);
-                                        }}
-                                        disabled={!ep.custom}>
-                                        <SelectTrigger>{ep.method}</SelectTrigger>
+                                        }}>
+                                        <SelectTrigger className="bg-white">{ep.method}</SelectTrigger>
                                         <SelectContent>
                                             {methods.map((m) => (
                                                 <SelectItem key={m} value={m}>
@@ -195,16 +200,17 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                                 <TableCell>
                                     <Input
                                         value={ep.endpoint}
+                                        className="border border-gray-300"
                                         onChange={(e) => {
                                             const updated = [...endpoints];
                                             updated[idx].endpoint = e.target.value;
                                             setEndpoints(updated);
                                         }}
-                                        disabled={!ep.custom}
                                     />
                                 </TableCell>
                                 <TableCell>
                                     <Input
+                                        className="border border-gray-300"
                                         value={ep.description}
                                         onChange={(e) => {
                                             const updated = [...endpoints];
@@ -221,7 +227,7 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                                             updated[idx].permission = value;
                                             setEndpoints(updated);
                                         }}>
-                                        <SelectTrigger>{ep.permission}</SelectTrigger>
+                                        <SelectTrigger className="bg-white">{ep.permission}</SelectTrigger>
                                         <SelectContent>
                                             {permissions.map((p) => (
                                                 <SelectItem key={p} value={p}>
@@ -245,34 +251,77 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                                     ) : null}
                                 </TableCell>
                             </TableRow>
-                            <TableRow className="bg-neutral-200" key={idx + "sep"}>
-                                <TableCell colSpan={6}>
-                                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                            <TableRow className="pt-0 border-b border-neutral-200" key={idx + "sep"}>
+                                <TableCell colSpan={6} className="pt-0">
+                                    <div className="inline-flex items-center gap-2 text-xs text-neutral-500">
                                         <div className="flex items-center flex-1 gap-1 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">
                                             Authorization:{" "}
                                             <Switch
                                                 size="xs"
                                                 className="ml-auto bg-neutral-300"
-                                                checked={ep.active}
+                                                checked={ep.authorization}
                                                 onCheckedChange={(checked) => {
                                                     const updated = [...endpoints];
-                                                    updated[idx].active = checked;
+                                                    updated[idx].authorization = checked;
+                                                    setEndpoints(updated);
+                                                }}
+                                            />
+                                        </div>
+                                        <div>&rarr;</div>
+                                        <div className="flex items-center flex-1 gap-2 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">
+                                            <span className="font-medium">Validation:</span>
+                                            <a
+                                                className="flex items-center gap-1 px-0 py-0 text-xs text-blue-600 hover:underline"
+                                                href="#"
+                                                onClick={(e) => {
+                                                    setValidationEndpoint(endpoints[idx]);
+                                                }}>
+                                                <Settings2 className="w-3 h-3" strokeWidth={1.5} />
+                                                Edit
+                                            </a>
+                                            <Switch
+                                                size="xs"
+                                                className="ml-auto bg-neutral-300"
+                                                checked={ep.authorization}
+                                                onCheckedChange={(checked) => {
+                                                    const updated = [...endpoints];
+                                                    updated[idx].authorization = checked;
                                                     setEndpoints(updated);
                                                 }}
                                             />
                                         </div>
                                         <div>&rarr;</div>
                                         <div className="flex items-center flex-1 gap-1 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">
-                                            Validation:
+                                            Logic:
+                                            <Switch
+                                                size="xs"
+                                                className="ml-auto bg-neutral-300"
+                                                checked={ep.authorization}
+                                                onCheckedChange={(checked) => {
+                                                    const updated = [...endpoints];
+                                                    updated[idx].authorization = checked;
+                                                    setEndpoints(updated);
+                                                }}
+                                            />
                                         </div>
                                         <div>&rarr;</div>
-                                        <div className="flex items-center flex-1 gap-1 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">Logic:</div>
-                                        <div>&rarr;</div>
-                                        <div className="flex items-center flex-1 gap-1 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">Return:</div>
+                                        <div className="flex items-center flex-1 gap-1 px-2 py-1 text-xs bg-white border rounded text-neutral-500 border-neutral-200">
+                                            Return:
+                                            <Switch
+                                                size="xs"
+                                                className="ml-auto bg-neutral-300"
+                                                checked={ep.authorization}
+                                                onCheckedChange={(checked) => {
+                                                    const updated = [...endpoints];
+                                                    updated[idx].authorization = checked;
+                                                    setEndpoints(updated);
+                                                }}
+                                            />
+                                        </div>
                                     </div>
                                 </TableCell>
                             </TableRow>
-                        </>
+                        </Fragment>
                     ))}
                     <TableRow>
                         <TableCell colSpan={5}>
@@ -298,6 +347,23 @@ export default function Endpoints({ collection, endpoints: collectionEndpoints, 
                     </TableRow>
                 </TableBody>
             </Table>
+            <ValidationManager
+                open={!!validationEndpoint}
+                onOpenChange={(open) => {
+                    if (!open) setValidationEndpoint(null);
+                }}
+                onSave={(validation) => {
+                    if (validationEndpoint) {
+                        const updated = endpoints.map((ep) =>
+                            ep.endpoint === validationEndpoint.endpoint && ep.method === validationEndpoint.method ? { ...ep, validation } : ep
+                        );
+                        setEndpoints(updated);
+                        onChange(collection, updated);
+                        setValidationEndpoint(null);
+                    }
+                }}
+                endpoint={validationEndpoint?.endpoint || ""}
+                validation={validationEndpoint?.validation || {}}></ValidationManager>
         </div>
     );
 }
